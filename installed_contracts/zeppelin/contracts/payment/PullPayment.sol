@@ -14,6 +14,22 @@ contract PullPayment {
     payments[dest] += amount;
   }
 
+  // change send amount for a payee, if not available throw
+  function adjustBalance(address dest, uint amount) internal {
+    require(payments[dest] >= amount);
+    payments[dest] -= amount;
+  }
+
+  // resets the balance for a payee to 0
+  function resetBalance(address dest) internal {
+    payments[dest] = 0;
+  }
+
+  // returns the balance for a payee
+  function getBalance(address dest) internal returns (uint) {
+    return payments[dest];
+  }
+
   // withdraw accumulated balance, called by payee
   function withdrawPayments() {
     address payee = msg.sender;
