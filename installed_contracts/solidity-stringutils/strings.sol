@@ -1,3 +1,4 @@
+pragma solidity ^0.4.8;
 /*
  * @title String & slice utility library for Solidity contracts.
  * @author Nick Johnson <arachnid@notdot.net>

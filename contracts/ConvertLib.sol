@@ -5,7 +5,7 @@ library ConvertLib{
 		return amount * conversionRate;
 	}
 
-	function etherToWei(uint amount) returns (uint convertedAmount) {
+	function etherToWei(uint amount) returns (uint) {
 		return amount * 1000000000000000000;
 	}
 }
