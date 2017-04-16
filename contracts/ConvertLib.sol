@@ -6,6 +6,10 @@ library ConvertLib{
 	}
 
 	function etherToWei(uint amount) returns (uint) {
-		return amount * 1000000000000000000;
+		return amount *  1000000000000000000;
+	}
+
+	function daysToMs(uint amount_days) returns (uint) {
+		return amount_days * 86400000;
 	}
 }

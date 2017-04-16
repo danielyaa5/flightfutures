@@ -1,8 +1,10 @@
-var ConvertLib = artifacts.require("./ConvertLib.sol");
-var MetaCoin = artifacts.require("./MetaCoin.sol");
+'use strict';
+
+const ConvertLib = artifacts.require('./ConvertLib.sol');
+const FlightFuture = artifacts.require('./FlightFuture.sol');
 
 module.exports = function(deployer) {
-  deployer.deploy(ConvertLib);
-  deployer.link(ConvertLib, MetaCoin);
-  deployer.deploy(MetaCoin);
+    deployer.deploy(ConvertLib);
+    deployer.link(ConvertLib, FlightFuture);
+    deployer.deploy(FlightFuture, { gas: 3999999 });
 };
