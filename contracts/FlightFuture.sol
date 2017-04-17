@@ -7,7 +7,7 @@ import '../installed_contracts/zeppelin/contracts/SafeMath.sol';
 
 import '../installed_contracts/oraclize/oraclizeAPI_0.4.sol';
 
-import './ConvertLib.sol';
+import './Converter.sol';
 
 /**
 	TODO (General):
@@ -16,7 +16,7 @@ import './ConvertLib.sol';
 		- [ ] Move setting of conversion_rate and current_price to their own functions
 		- [ ] Shorten variable names
 */
-contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOraclize {
+contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter, usingOraclize {
 	// constants
 
 	address constant COMPANY = 0x1234567;
@@ -27,28 +27,21 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 
 	//structs
 
-	struct FlightInfo { // TODO: add round-trip
-		uint depart_date_epoch;
-        string depart_date;
-        string depart_location;
-		string destination_location;
-    }
-	FlightInfo private flightInfo;
 	struct Prices {
-		// TODO: add change price function
-		uint sell_price; // wei
+        // TODO: add change price function
+        uint sell_price; // wei
 
         // TODO: should be hidden
         uint target_price; // primary
-        uint penalty_price; // primary
-    }
+        uint penalty_price; // wei
+	}
 	Prices private prices;
 
 	// events
 
 	event PurchasedEvent (
-        address indexed _buyer,
-        address indexed _seller,
+		address indexed _buyer,
+		address indexed _seller,
 		uint _price
 	);
 	event OfferedEvent (
@@ -71,7 +64,8 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 
 	// enums
 
-    enum ContractStates {
+	enum ContractStates {
+		Nascent,
 		Offered,
 		Purchased,
 		Marked,
@@ -81,87 +75,83 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 		Expired,
 		Defaulted
 	}
-	string[8] private state_strings =
-		['Offered', 'Purchased', 'Marked', 'BalanceVerified', 'BuyingTicket', 'TicketPurchased', 'Expired', 'Defaulted'];
-    ContractStates private state = ContractStates.Offered;
+	string[9] private state_strings =
+		['Nascent', 'Offered', 'Purchased', 'Marked', 'BalanceVerified', 'BuyingTicket', 'TicketPurchased', 'Expired', 'Defaulted'];
+	ContractStates private state = ContractStates.Nascent;
 
 	// privates
 
-	mapping(bytes32 => bool) query_id_list;
+	mapping(bytes32 => bool) private query_id_list;
 	address private owner;
 	address private buyer;
 	bytes32 private conversion_query_id;
 	bytes32 private price_query_id;
 	bytes32 private random_query_id;
 	string private buyer_contact_information;
+	string private owner_contact_information;
 	string private pub_key;
 	string private primary_currency = 'USD';
-    uint private mark_to_market_rate = 60 * 60 * 24; // 1 day in seconds
+	string private depart_date;
+	string private depart_location;
+	string private destination_location;
+	uint private mark_to_market_rate = 60 * 60 * 24; // 1 day in seconds
 	uint private expiration;
 	// prices and balances in wei
 	uint private current_price;
-	uint private contract_balance;
 	uint private expected_balance;
 	uint private conversion_rate; // primary currency to wei
+	uint depart_date_epoch;
 
 	// Constructor
 
-	function FlightFuture(
-		// TODO: validate all constructor param data
+	function FlightFuture() {
+		OAR = OraclizeAddrResolverI(0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475); // TODO: Remove before production
+    	owner = msg.sender;
+	}
 
-		// Flight info
-		uint flight_depart_date_epoch,
-		string flight_depart_date,
-		string flight_depart_location,
-		string flight_destination_location,
+	// Offer Logic
 
-		// Prices, all prices in lowest denomination of currency
-        uint sell_price, // primary
+	function offer(
+        // TODO: validate all constructor param data
+        // TODO: Send offer fee to company
+
+        // Flight info
+        uint flight_depart_date_epoch,
+        string flight_depart_date,
+        string flight_depart_location,
+        string flight_destination_location,
+
+        // Prices, all prices in lowest denomination of currency
+        uint sell_price, // wei
         uint target_price, // primary
-        uint penalty_price, // ether
+        uint penalty_price, // wei
 
-		uint contract_length, // days
+        uint contract_length, // days
         string owner_email,
         string company_pub_key
-	) payable {
-		// TODO: Send offer fee to company
-
-		OAR = OraclizeAddrResolverI(0x63fDe7BAaaC925F16769231835cD40208d037E29); // TODO: Remove before production
-
-		require(msg.value == penalty_price); // To create a contract, you must put the failure penalty up. Prevents backing out.
-
+	) external payable {
+		require(msg.sender == owner);
+        require(msg.value == penalty_price); // To create a contract, you must put the failure penalty up. Prevents backing out.
 		setConversionRate(); // update conversion rate
-		contract_balance = msg.value;
-//        prices = createPrices(sell_price, target_price, penalty_price);
-        flightInfo = FlightInfo(flight_depart_date_epoch, flight_depart_date, flight_depart_location, flight_destination_location);
-        expiration = safeAdd(now, ConvertLib.daysToMs(contract_length));
-        owner = msg.sender;
-        pub_key = company_pub_key;
-//        setContactInformation(owner_email);
-//		setConversionRate(); // set the conversion rate so we no if we got the appropriate purchase price for the contract
-//        OfferedEvent(owner, prices.sell_price, flightToString());
-		// validatePrices();
-		// validateFlightInfo()
-		// bool round_trip = flight_return_date != '' && flight_return_location != '';
+		prices = Prices(sell_price, target_price, penalty_price);
+		depart_date_epoch = flight_depart_date_epoch;
+		depart_date = flight_depart_date;
+		depart_location = flight_depart_location;
+		destination_location = flight_destination_location;
+		expiration = safeAdd(now, daysToMs(contract_length));
+		pub_key = company_pub_key;
+		changeState(ContractStates.Offered);
+		OfferedEvent(owner, prices.sell_price, flightToString());
+//		 validatePrices();
+//		 validateFlightInfo()
+//		 bool round_trip = flight_return_date != '' && flight_return_location != '';
 	}
-
-	// constructor helpers
 
 	function flightToString() constant private returns (string) {
-		string memory flight_string = concat('Leaving on ', flightInfo.depart_date, ' from ', flightInfo.depart_location);
-		flight_string = concat(flight_string, ' to ', flightInfo.destination_location);
+		string memory flight_string = concat('Leaving on ', depart_date, ' from ', depart_location);
+		flight_string = concat(flight_string, ' to ', destination_location);
 		return flight_string;
 	}
-
-	function createPrices(uint sell_price, uint target_price, uint penalty_price) constant private returns (Prices) {
-		return Prices(
-            sell_price,
-            target_price,
-            ConvertLib.etherToWei(penalty_price)
-		);
-	}
-
-	// validators
 
 	function validatePrices() constant private constant {
 		require(prices.target_price < prices.sell_price); // Ticket sell price should be greater than targeted purchase price.
@@ -170,7 +160,7 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 	}
 
 	function validateFlightInfo() constant private constant {
-		require(flightInfo.depart_date_epoch <= now);
+		require(depart_date_epoch <= now);
 	}
 
 	// Purchase Logic
@@ -181,10 +171,9 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 		require(msg.value >= primaryToWei(prices.sell_price));
 		require(now <= expiration);
 		require(msg.sender != owner);
-		require(now <= flightInfo.depart_date_epoch);
+		require(now <= depart_date_epoch);
 
 		buyer = msg.sender;
-		contract_balance = safeAdd(contract_balance, msg.value);
 		buyer_contact_information = buyer_email;
 		startContract();
 		changeState(ContractStates.Purchased);
@@ -197,12 +186,12 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 	// Termination Logic
 
 	function contractExpired() private {
-		asyncSend(buyer, contract_balance);
+		asyncSend(buyer, this.balance);
 		changeState(ContractStates.Expired);
 	}
 
 	function ownerDefault() private {
-		asyncSend(buyer, contract_balance);
+		asyncSend(buyer, this.balance);
 		changeState(ContractStates.Defaulted);
 	}
 
@@ -210,45 +199,45 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 
 	// This function gets called periodically to adjust the money in the contract
 	function markToMarket() private {
-    	checkBalance();
+		checkBalance();
 		assert(state == ContractStates.BalanceVerified);
-        if (shouldBuy()) {
-            internalBuyTicket(); // Purchase the ticket
-        } else {
-            expected_balance = safeAdd(current_price, prices.penalty_price);
-            changeState(ContractStates.Marked);
-            MarkedToMarketEvent(current_price, contract_balance, expected_balance);
-        }
+		if (shouldBuy()) {
+			internalBuyTicket(); // Purchase the ticket
+		} else {
+			expected_balance = safeAdd(current_price, prices.penalty_price);
+			changeState(ContractStates.Marked);
+			MarkedToMarketEvent(current_price, this.balance, expected_balance);
+		}
 	}
 
 	function checkBalance() private {
 		// the contract has not been marked yet no reason to check
-    	if (state == ContractStates.Purchased) {
+		if (state == ContractStates.Purchased) {
 			changeState(ContractStates.BalanceVerified);
-        	return;
+			return;
 		}
 
 		// if the contract isn't marked to market we shouldn't be calling checkBalance
 		assert(state == ContractStates.Marked);
 
 		if (expiration <= now) {
-            contractExpired();
-        	return;
+			contractExpired();
+			return;
 		}
 
 		resetBalance(owner);
 		resetBalance(buyer);
-		int balance_diff = int(contract_balance) - int(expected_balance);
+		int balance_diff = int(this.balance) - int(expected_balance);
 
 		// if the there is a negative balance, the contract has a deficit and is overdue
 		if (balance_diff < 0) {
-        	ownerDefault();
+			ownerDefault();
 			return;
 		}
 
-        if (balance_diff > 0) {
-            // if the contract has an excess balance then expected we can send money back to the owner
-            asyncSend(owner, uint(balance_diff));
+		if (balance_diff > 0) {
+			// if the contract has an excess balance then expected we can send money back to the owner
+			asyncSend(owner, uint(balance_diff));
 		}
 
 		changeState(ContractStates.BalanceVerified);
@@ -308,7 +297,7 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 
 	function ticketPurchaseSuccess(uint purchased_price) private {
 		uint left_over = safeSub(prices.target_price, purchased_price);
-		uint owner_payment = safeAdd(contract_balance, left_over);
+		uint owner_payment = safeAdd(this.balance, left_over);
 		asyncSend(owner, owner_payment);
 		changeState(ContractStates.TicketPurchased);
 		PurchasedTicketEvent(purchased_price);
@@ -323,17 +312,17 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 
 	// flow: startContract -> (wait 1 day) setConversionRate -> (no wait) setLowPrice -> markToMarket
 	function __callback(bytes32 query_id, string result) {
-        // check if this query_id was already processed before
+		// check if this query_id was already processed before
 		require(query_id_list[query_id] != true);
 
-        // just to be sure the calling address is the Oraclize authorized one
-        assert(msg.sender == oraclize_cbAddress());
+		// just to be sure the calling address is the Oraclize authorized one
+		assert(msg.sender == oraclize_cbAddress());
 
 		if (query_id == conversion_query_id) {
 			uint primary_to_eth = stringToUint(result);
 			setConversionRateCb(primary_to_eth);
 		} else if (query_id == conversion_query_id) {
-        	uint low_price_primary = stringToUint(result);
+			uint low_price_primary = stringToUint(result);
 			setLowPriceCb(low_price_primary);
 		} else if (query_id == random_query_id) {
 			getRandomPriceCb(result);
@@ -344,15 +333,15 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 	}
 
 	// get conversion rate from primary to wei
-	function setConversionRate() constant private {
+	function setConversionRate() {
 		// TODO: Should TLSNotary Proof be implemented?
 		string memory query = concat('json(https://min-api.cryptocompare.com/data/price?fsym=', primary_currency);
 		query = concat(query, '&tsyms=ETH).ETH');
-        conversion_query_id = oraclize_query(mark_to_market_rate, 'URL', query);
+		conversion_query_id = oraclize_query(mark_to_market_rate, 'URL', query);
 	}
 
 	function setConversionRateCb(uint primary_to_eth) private {
-		conversion_rate = primary_to_eth * ConvertLib.etherToWei(1);
+		conversion_rate = primary_to_eth * etherToWei(1);
 		getRandomPrice(); // TODO: Remove random price logic
 	}
 
@@ -366,7 +355,7 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 		string memory query = 'json(';
 		query = concat(query, COMPANY_BASE_URL);
 		query = concat(query, COMPANY_TEST_ROUTE);
-    	query = concat(query, COMPANY_RANDOM_INCLUSIVE_ROUTE, '/');
+		query = concat(query, COMPANY_RANDOM_INCLUSIVE_ROUTE, '/');
 		query = concat(query, min, '/', max, '/');
 		query = concat(query, ').price');
 		random_query_id = oraclize_query('URL', query);
@@ -384,9 +373,9 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 		query = concat(query, COMPANY_TEST_ROUTE);
 		query = concat(query, COMPANY_LOW_PRICE_ROUTE);
 		query = concat(query, '/');
-		query = concat(query, flightInfo.depart_location);
+		query = concat(query, depart_location);
 		query = concat(query, '/');
-		query = concat(query, flightInfo.depart_date);
+		query = concat(query, depart_date);
 		query = concat(query, '/');
 		query = concat(query, random_price);
 		query = concat(query, ').price');
@@ -396,6 +385,12 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 	function setLowPriceCb(uint low_price_primary) private {
 		current_price = primaryToWei(low_price_primary);
 		markToMarket();
+	}
+
+	// External Getters
+
+	function getState() external returns (string) {
+		return state_strings[uint(state)];
 	}
 
 	// General Helpers
@@ -411,13 +406,13 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 	function arrayContainsNumber(int[] array, int val) constant private returns (bool) {
 		for (var i = 0; i < array.length; i++) {
 			if (array[i] == val) return true;
-        }
+		}
 		return false;
 	}
 
 	function primaryToWei(uint price) constant private returns (uint) {
 		assert(conversion_rate != 0);
-		return ConvertLib.convert(price, conversion_rate);
+		return convert(price, conversion_rate);
 	}
 
 	// TODO: Remove after updating solidity version
@@ -425,8 +420,8 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, usingOracl
 		if (expression == false) throw;
 	}
 
-    // TODO: Remove after updating solidity version
-    function assert(bool assertion) private {
+	// TODO: Remove after updating solidity version
+	function assert(bool assertion) private {
 		if (assertion == false) throw;
 	}
 
