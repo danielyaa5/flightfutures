@@ -1,0 +1,1 @@
+. ~/.nvm/nvm.sh use stable && clear && testrpc --mnemonic "flight future mnemonic" --accounts 50

@@ -1,7 +1,6 @@
 pragma solidity ^0.4.8;
 
 import '../installed_contracts/zeppelin/contracts/ownership/Ownable.sol';
-import '../installed_contracts/zeppelin/contracts/ownership/Contactable.sol';
 import '../installed_contracts/zeppelin/contracts/payment/PullPayment.sol';
 import '../installed_contracts/zeppelin/contracts/SafeMath.sol';
 
@@ -11,12 +10,12 @@ import './Converter.sol';
 
 /**
 	TODO (General):
-		- [ ] Replace throw with require and require when possible
-		- [ ] Add more logging
-		- [ ] Move setting of conversion_rate and current_price to their own functions
-		- [ ] Shorten variable names
+		- Add more logging
+		- Move setting of conversion_rate and current_price to their own functions
+		- Shorten variable names
 */
-contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter, usingOraclize {
+contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOraclize {
+
 	// constants
 
 	address constant COMPANY = 0x1234567;
@@ -25,15 +24,44 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 	string constant COMPANY_RANDOM_INCLUSIVE_ROUTE = '/random/inclusive';
 	string constant COMPANY_LOW_PRICE_ROUTE = '/low_price';
 
+	string constant CRYPTO_COMPARE_BASE_URL = 'https://min-api.cryptocompare.com';
+
+	// public
+	address public owner;
+	uint public creation_timestamp;
+	uint public conversion_rate; // primary currency to wei
+
+	// private
+
+	mapping(bytes32 => bool) private query_id_list;
+	address private buyer;
+	bytes32 private conversion_query_id;
+	bytes32 private conversion_immediate_query_id;
+	bytes32 private price_query_id;
+	bytes32 private random_query_id;
+	string private buyer_contact_information;
+	string private owner_contact_information;
+	string private pub_key;
+	string private primary_currency = 'USD';
+	string private depart_date;
+	string private depart_location;
+	string private destination_location;
+	uint private mark_to_market_rate = 60 * 60 * 24; // 1 day in seconds
+	uint private expiration;
+	// prices and balances in wei
+	uint private current_price;
+	uint private expected_balance;
+	uint depart_date_epoch;
+
 	//structs
 
 	struct Prices {
         // TODO: add change price function
-        uint sell_price; // wei
+        uint sell_price; 		// wei
 
         // TODO: should be hidden
-        uint target_price; // primary
-        uint penalty_price; // wei
+        uint target_price; 		// primary
+        uint penalty_price; 	// wei
 	}
 	Prices private prices;
 
@@ -61,6 +89,10 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 		string _prev_state,
 		string _new_state
 	);
+	event OraclizeCb(
+		bytes32 query_id,
+		string result
+	);
 
 	// enums
 
@@ -79,34 +111,12 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 		['Nascent', 'Offered', 'Purchased', 'Marked', 'BalanceVerified', 'BuyingTicket', 'TicketPurchased', 'Expired', 'Defaulted'];
 	ContractStates private state = ContractStates.Nascent;
 
-	// privates
-
-	mapping(bytes32 => bool) private query_id_list;
-	address private owner;
-	address private buyer;
-	bytes32 private conversion_query_id;
-	bytes32 private price_query_id;
-	bytes32 private random_query_id;
-	string private buyer_contact_information;
-	string private owner_contact_information;
-	string private pub_key;
-	string private primary_currency = 'USD';
-	string private depart_date;
-	string private depart_location;
-	string private destination_location;
-	uint private mark_to_market_rate = 60 * 60 * 24; // 1 day in seconds
-	uint private expiration;
-	// prices and balances in wei
-	uint private current_price;
-	uint private expected_balance;
-	uint private conversion_rate; // primary currency to wei
-	uint depart_date_epoch;
-
 	// Constructor
 
 	function FlightFuture() {
 		OAR = OraclizeAddrResolverI(0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475); // TODO: Remove before production
     	owner = msg.sender;
+		creation_timestamp = now;
 	}
 
 	// Offer Logic
@@ -122,17 +132,18 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
         string flight_destination_location,
 
         // Prices, all prices in lowest denomination of currency
-        uint sell_price, // wei
-        uint target_price, // primary
-        uint penalty_price, // wei
+        uint sell_price, 		// wei
+        uint target_price, 		// primary
+        uint penalty_price, 	// wei
 
-        uint contract_length, // days
+        uint contract_length, 	// days
         string owner_email,
         string company_pub_key
 	) external payable {
+		assert(state == ContractStates.Nascent);
 		require(msg.sender == owner);
-        require(msg.value == penalty_price); // To create a contract, you must put the failure penalty up. Prevents backing out.
-		setConversionRate(); // update conversion rate
+        require(msg.value == penalty_price); 							// To create a contract, you must put the failure penalty up. Prevents backing out.
+		setConversionRateImmediate(); 											// update conversion rate
 		prices = Prices(sell_price, target_price, penalty_price);
 		depart_date_epoch = flight_depart_date_epoch;
 		depart_date = flight_depart_date;
@@ -140,6 +151,7 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 		destination_location = flight_destination_location;
 		expiration = safeAdd(now, daysToMs(contract_length));
 		pub_key = company_pub_key;
+    	owner_contact_information = owner_email;
 		changeState(ContractStates.Offered);
 		OfferedEvent(owner, prices.sell_price, flightToString());
 //		 validatePrices();
@@ -313,15 +325,22 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 	// flow: startContract -> (wait 1 day) setConversionRate -> (no wait) setLowPrice -> markToMarket
 	function __callback(bytes32 query_id, string result) {
 		// check if this query_id was already processed before
-		require(query_id_list[query_id] != true);
+		require(query_id_list[query_id] == false);
+
+		query_id_list[query_id] = true;
 
 		// just to be sure the calling address is the Oraclize authorized one
 		assert(msg.sender == oraclize_cbAddress());
 
+		OraclizeCb(query_id, result);
+
 		if (query_id == conversion_query_id) {
-			uint primary_to_eth = stringToUint(result);
-			setConversionRateCb(primary_to_eth);
-		} else if (query_id == conversion_query_id) {
+			var (numerator, denominator) = stringToFraction(result);
+			setConversionRateCb(numerator, denominator);
+		} else if (query_id == conversion_immediate_query_id) {
+			(numerator, denominator) = stringToFraction(result);
+			setConversionRateImmediateCb(numerator, denominator);
+		} else if (query_id == price_query_id) {
 			uint low_price_primary = stringToUint(result);
 			setLowPriceCb(low_price_primary);
 		} else if (query_id == random_query_id) {
@@ -329,20 +348,33 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 		} else {
 			throw;
 		}
-		query_id_list[query_id] = true;
 	}
 
 	// get conversion rate from primary to wei
 	function setConversionRate() {
 		// TODO: Should TLSNotary Proof be implemented?
-		string memory query = concat('json(https://min-api.cryptocompare.com/data/price?fsym=', primary_currency);
+		string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
+		query = concat(query, '/data/price?fsym=', primary_currency);
 		query = concat(query, '&tsyms=ETH).ETH');
 		conversion_query_id = oraclize_query(mark_to_market_rate, 'URL', query);
 	}
 
-	function setConversionRateCb(uint primary_to_eth) private {
-		conversion_rate = primary_to_eth * etherToWei(1);
+	function setConversionRateCb(uint numerator, uint denominator) private {
+		conversion_rate = (numerator * etherToWei(1))/denominator;
 		getRandomPrice(); // TODO: Remove random price logic
+	}
+
+	// this sets conversion immediately instead of waiting for mark to market period and its cb doesn't start the get price query
+	function setConversionRateImmediate() {
+		// TODO: Should TLSNotary Proof be implemented?
+		string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
+		query = concat(query, '/data/price?fsym=', primary_currency);
+		query = concat(query, '&tsyms=ETH).ETH');
+		conversion_immediate_query_id = oraclize_query('URL', query);
+	}
+
+	function setConversionRateImmediateCb(uint numerator, uint denominator) {
+		conversion_rate = (numerator * etherToWei(1))/denominator;
 	}
 
 	// TODO: Remove random price logic
@@ -389,7 +421,7 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 
 	// External Getters
 
-	function getState() external returns (string) {
+	function getState() external constant returns (string) {
 		return state_strings[uint(state)];
 	}
 
@@ -423,55 +455,6 @@ contract FlightFuture is SafeMath, Ownable, Contactable, PullPayment, Converter,
 	// TODO: Remove after updating solidity version
 	function assert(bool assertion) private {
 		if (assertion == false) throw;
-	}
-
-	function uintToString(uint v) constant returns (string str) {
-		uint maxlength = 100;
-		bytes memory reversed = new bytes(maxlength);
-		uint i = 0;
-		while (v != 0) {
-			uint remainder = v % 10;
-			v = v / 10;
-			reversed[i++] = byte(48 + remainder);
-		}
-		bytes memory s = new bytes(i + 1);
-		for (uint j = 0; j <= i; j++) {
-			s[j] = reversed[i - j];
-		}
-		str = string(s);
-	}
-
-	function appendUintToString(string inStr, uint v) constant returns (string str) {
-		uint maxlength = 100;
-		bytes memory reversed = new bytes(maxlength);
-		uint i = 0;
-		while (v != 0) {
-			uint remainder = v % 10;
-			v = v / 10;
-			reversed[i++] = byte(48 + remainder);
-		}
-		bytes memory inStrb = bytes(inStr);
-		bytes memory s = new bytes(inStrb.length + i + 1);
-		uint j;
-		for (j = 0; j < inStrb.length; j++) {
-			s[j] = inStrb[j];
-		}
-		for (j = 0; j <= i; j++) {
-			s[j + inStrb.length] = reversed[i - j];
-		}
-		str = string(s);
-	}
-
-	function stringToUint(string s) constant returns (uint result) {
-		bytes memory b = bytes(s);
-		uint i;
-		result = 0;
-		for (i = 0; i < b.length; i++) {
-			uint c = uint(b[i]);
-			if (c >= 48 && c <= 57) {
-				result = result * 10 + (c - 48);
-			}
-		}
 	}
 
 	function concat(string _a, string _b, string _c, string _d, string _e) internal returns (string) {
