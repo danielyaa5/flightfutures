@@ -19,17 +19,16 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	// constants
 
 	address constant COMPANY = 0x1234567;
-	string constant COMPANY_BASE_URL = 'http://localhost:3031';
-	string constant COMPANY_TEST_ROUTE = '/test';
-	string constant COMPANY_RANDOM_INCLUSIVE_ROUTE = '/random/inclusive';
-	string constant COMPANY_LOW_PRICE_ROUTE = '/low_price';
-
+	string constant COMPANY_BASE_URL = 'http://3b8c68c1.ngrok.io';
+	string constant GET_RANDOM_PRICE_ROUTE = '/contract/test/price/random';
 	string constant CRYPTO_COMPARE_BASE_URL = 'https://min-api.cryptocompare.com';
 
 	// public
 	address public owner;
 	uint public creation_timestamp;
 	uint public conversion_rate; // primary currency to wei
+	string public min_random_price; // REMOVE before prod
+	string public max_random_price; // REMOVE before prod
 
 	// private
 
@@ -91,7 +90,8 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	);
 	event OraclizeCb(
 		bytes32 query_id,
-		string result
+		string result,
+		uint timestamp
 	);
 
 	// enums
@@ -152,6 +152,11 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		expiration = safeAdd(now, daysToMs(contract_length));
 		pub_key = company_pub_key;
     	owner_contact_information = owner_email;
+
+		// TODO: Remove in prod
+		min_random_price = uint2str((prices.target_price * 2)/3);
+		max_random_price = uint2str((prices.target_price * 3)/2);
+
 		changeState(ContractStates.Offered);
 		OfferedEvent(owner, prices.sell_price, flightToString());
 //		 validatePrices();
@@ -178,12 +183,12 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	// Purchase Logic
 
 	function buyContract(string buyer_email) external payable {
-		require(conversion_rate != 0); // Conversion rate not set yet
-		require(state == ContractStates.Offered);
-		require(msg.value >= primaryToWei(prices.sell_price));
-		require(now <= expiration);
-		require(msg.sender != owner);
-		require(now <= depart_date_epoch);
+//		require(conversion_rate != 0); // Conversion rate not set yet
+//		require(state == ContractStates.Offered);
+//		require(msg.value >= primaryToWei(prices.sell_price));
+//		require(now <= expiration);
+//		require(msg.sender != owner);
+//		require(now <= depart_date_epoch);
 
 		buyer = msg.sender;
 		buyer_contact_information = buyer_email;
@@ -211,15 +216,18 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 	// This function gets called periodically to adjust the money in the contract
 	function markToMarket() private {
-		checkBalance();
-		assert(state == ContractStates.BalanceVerified);
-		if (shouldBuy()) {
-			internalBuyTicket(); // Purchase the ticket
-		} else {
-			expected_balance = safeAdd(current_price, prices.penalty_price);
-			changeState(ContractStates.Marked);
-			MarkedToMarketEvent(current_price, this.balance, expected_balance);
-		}
+//		checkBalance();
+//		assert(state == ContractStates.BalanceVerified);
+//		if (shouldBuy()) {
+//			internalBuyTicket(); // Purchase the ticket
+//		} else {
+//			expected_balance = safeAdd(current_price, prices.penalty_price);
+//			changeState(ContractStates.Marked);
+//			MarkedToMarketEvent(current_price, this.balance, expected_balance);
+//		}
+
+        MarkedToMarketEvent(current_price, this.balance, expected_balance);
+		startContract();
 	}
 
 	function checkBalance() private {
@@ -312,7 +320,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		uint owner_payment = safeAdd(this.balance, left_over);
 		asyncSend(owner, owner_payment);
 		changeState(ContractStates.TicketPurchased);
-		PurchasedTicketEvent(purchased_price);
+//		PurchasedTicketEvent(purchased_price);
 	}
 
 	// TODO: Complete
@@ -322,7 +330,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 	// Oracle Logic
 
-	// flow: startContract -> (wait 1 day) setConversionRate -> (no wait) setLowPrice -> markToMarket
+	// flow: startContract -> (wait 1 day) set conversion rate -> (no wait) setLowPrice -> markToMarket
 	function __callback(bytes32 query_id, string result) {
 		// check if this query_id was already processed before
 		require(query_id_list[query_id] == false);
@@ -332,7 +340,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		// just to be sure the calling address is the Oraclize authorized one
 		assert(msg.sender == oraclize_cbAddress());
 
-		OraclizeCb(query_id, result);
+//		OraclizeCb(query_id, result, now);
 
 		if (query_id == conversion_query_id) {
 			var (numerator, denominator) = stringToFraction(result);
@@ -356,7 +364,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
 		query = concat(query, '/data/price?fsym=', primary_currency);
 		query = concat(query, '&tsyms=ETH).ETH');
-		conversion_query_id = oraclize_query(mark_to_market_rate, 'URL', query);
+		conversion_query_id = oraclize_query(1, 'URL', query, 4000000); // TODO: Change back to mark to market
 	}
 
 	function setConversionRateCb(uint numerator, uint denominator) private {
@@ -380,38 +388,32 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	// TODO: Remove random price logic
 	// Generate a random number for the price.
 	function getRandomPrice() constant private {
-		// Control likelyhood of randval <= target price by * the min value by a fraction
-		uint min_value = (prices.target_price * 2)/3;
-		string memory min = uintToString(min_value);
-		string memory max = uintToString(prices.sell_price);
-		string memory query = 'json(';
-		query = concat(query, COMPANY_BASE_URL);
-		query = concat(query, COMPANY_TEST_ROUTE);
-		query = concat(query, COMPANY_RANDOM_INCLUSIVE_ROUTE, '/');
-		query = concat(query, min, '/', max, '/');
-		query = concat(query, ').price');
-		random_query_id = oraclize_query('URL', query);
+		string memory query = concat(query, COMPANY_BASE_URL);
+		query = concat(query, GET_RANDOM_PRICE_ROUTE, '/');
+		query = concat(query, min_random_price, '/');
+		query = concat(query, max_random_price);
+		random_query_id = oraclize_query('URL', query, 4000000);
 	}
 
 	// TODO: Remove random price logic
 	function getRandomPriceCb(string price) constant private {
-		setLowPrice(price);
+		setLowPriceCb(stringToUint(price));
 	}
 
-	// TODO: Remove random price logic and test route
+	// TODO: Remove random price logic
 	function setLowPrice(string random_price) constant private {
-		string memory query = 'json(';
-		query = concat(query, COMPANY_BASE_URL);
-		query = concat(query, COMPANY_TEST_ROUTE);
-		query = concat(query, COMPANY_LOW_PRICE_ROUTE);
-		query = concat(query, '/');
-		query = concat(query, depart_location);
-		query = concat(query, '/');
-		query = concat(query, depart_date);
-		query = concat(query, '/');
-		query = concat(query, random_price);
-		query = concat(query, ').price');
-		price_query_id = oraclize_query('URL', query);
+//		string memory query = 'json(';
+//		query = concat(query, COMPANY_BASE_URL);
+//		query = concat(query, COMPANY_TEST_ROUTE);
+//		query = concat(query, COMPANY_LOW_PRICE_ROUTE);
+//		query = concat(query, '/');
+//		query = concat(query, depart_location);
+//		query = concat(query, '/');
+//		query = concat(query, depart_date);
+//		query = concat(query, '/');
+//		query = concat(query, random_price);
+//		query = concat(query, ').price');
+//		price_query_id = oraclize_query('URL', query, 2000000);
 	}
 
 	function setLowPriceCb(uint low_price_primary) private {
@@ -432,7 +434,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 		string prev_state = state_strings[uint(state)];
 		state = _state;
-		StateChangedEvent(prev_state, state_strings[uint(state)]);
+//		StateChangedEvent(prev_state, state_strings[uint(state)]);
 	}
 
 	function arrayContainsNumber(int[] array, int val) constant private returns (bool) {
