@@ -6,53 +6,55 @@ import '../installed_contracts/zeppelin/contracts/SafeMath.sol';
 
 import '../installed_contracts/oraclize/oraclizeAPI_0.4.sol';
 
+import './Purchasable.sol';
 import './Converter.sol';
 
 /**
 	TODO (General):
 		- Add more logging
+        - Validate all param data
 		- Move setting of conversion_rate and current_price to their own functions
 		- Shorten variable names
 */
-contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOraclize {
+contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter, usingOraclize {
 
-	// constants
+	// Constants
 
-	address constant COMPANY = 0x1234567;
-	string constant COMPANY_BASE_URL = 'http://3b8c68c1.ngrok.io';
-	string constant GET_RANDOM_PRICE_ROUTE = '/contract/test/price/random';
-	string constant CRYPTO_COMPARE_BASE_URL = 'https://min-api.cryptocompare.com';
+	address constant COMPANY = address(0);
+	address constant ORACLIZE = 0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475;
+    string constant CONVERSION_URL = 'JSON(https://min-api.cryptocompare.com/data/price?fsym=USD&tsyms=ETH';
 
-	// public
-	address public owner;
+	// Public
+
+	address public seller;
+	address public buyer;
+	uint public accept_fee;
 	uint public creation_timestamp;
 	uint public conversion_rate; // primary currency to wei
 	string public min_random_price; // REMOVE before prod
 	string public max_random_price; // REMOVE before prod
 
-	// private
+	// Private
 
-	mapping(bytes32 => bool) private query_id_list;
-	address private buyer;
-	bytes32 private conversion_query_id;
-	bytes32 private conversion_immediate_query_id;
-	bytes32 private price_query_id;
-	bytes32 private random_query_id;
+	string[11] private state_strings =
+	['Nascent', 'Offered', 'Accepting', 'Accepted', 'Marked', 'Verified', 'Purchasing', 'TicketPurchased', 'Expired', 'Defaulted', 'Canceled'];
 	string private buyer_contact_information;
-	string private owner_contact_information;
+	string private seller_contact_information;
 	string private pub_key;
 	string private primary_currency = 'USD';
+	uint private expiration;
+
+	// flight info
 	string private depart_date;
 	string private depart_location;
 	string private destination_location;
-	uint private mark_to_market_rate = 60 * 60 * 24; // 1 day in seconds
-	uint private expiration;
+
 	// prices and balances in wei
 	uint private current_price;
 	uint private expected_balance;
 	uint depart_date_epoch;
 
-	//structs
+	// Structs
 
 	struct Prices {
         // TODO: add change price function
@@ -64,9 +66,9 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	}
 	Prices private prices;
 
-	// events
+	// Events
 
-	event PurchasedEvent (
+	event AcceptedEvent (
 		address indexed _buyer,
 		address indexed _seller,
 		uint _price
@@ -89,40 +91,39 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		string _new_state
 	);
 	event OraclizeCb(
-		bytes32 query_id,
-		string result,
-		uint timestamp
+        bytes32 query_id,
+        string result,
+        uint timestamp
 	);
 
-	// enums
+	// Enums
 
 	enum ContractStates {
 		Nascent,
 		Offered,
-		Purchased,
+		Accepting,
+		Accepted,
 		Marked,
-		BalanceVerified,
-		BuyingTicket,
+		Verified,
+		Purchasing,
 		TicketPurchased,
 		Expired,
-		Defaulted
+		Defaulted,
+		Canceled
 	}
-	string[9] private state_strings =
-		['Nascent', 'Offered', 'Purchased', 'Marked', 'BalanceVerified', 'BuyingTicket', 'TicketPurchased', 'Expired', 'Defaulted'];
 	ContractStates private state = ContractStates.Nascent;
 
 	// Constructor
 
-	function FlightFuture() {
-		OAR = OraclizeAddrResolverI(0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475); // TODO: Remove before production
-    	owner = msg.sender;
+	function FlightFuture(uint _accept_fee) {
+		OAR = OraclizeAddrResolverI(ORACLIZE); // TODO: Remove before production
+		accept_fee = _accept_fee;
 		creation_timestamp = now;
 	}
 
 	// Offer Logic
 
 	function offer(
-        // TODO: validate all constructor param data
         // TODO: Send offer fee to company
 
         // Flight info
@@ -137,69 +138,68 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
         uint penalty_price, 	// wei
 
         uint contract_length, 	// days
-        string owner_email,
-        string company_pub_key
+        string seller_email
 	) external payable {
-		assert(state == ContractStates.Nascent);
+		require(state == ContractStates.Nascent);
 		require(msg.sender == owner);
         require(msg.value == penalty_price); 							// To create a contract, you must put the failure penalty up. Prevents backing out.
-		setConversionRateImmediate(); 											// update conversion rate
+
 		prices = Prices(sell_price, target_price, penalty_price);
 		depart_date_epoch = flight_depart_date_epoch;
 		depart_date = flight_depart_date;
 		depart_location = flight_depart_location;
 		destination_location = flight_destination_location;
 		expiration = safeAdd(now, daysToMs(contract_length));
-		pub_key = company_pub_key;
-    	owner_contact_information = owner_email;
-
-		// TODO: Remove in prod
-		min_random_price = uint2str((prices.target_price * 2)/3);
-		max_random_price = uint2str((prices.target_price * 3)/2);
+    	seller_contact_information = seller_email;
+    	seller = msg.sender;
 
 		changeState(ContractStates.Offered);
-		OfferedEvent(owner, prices.sell_price, flightToString());
-//		 validatePrices();
-//		 validateFlightInfo()
-//		 bool round_trip = flight_return_date != '' && flight_return_location != '';
 	}
 
-	function flightToString() constant private returns (string) {
-		string memory flight_string = concat('Leaving on ', depart_date, ' from ', depart_location);
-		flight_string = concat(flight_string, ' to ', destination_location);
-		return flight_string;
-	}
+	// Accepting Logic
 
-	function validatePrices() constant private constant {
-		require(prices.target_price < prices.sell_price); // Ticket sell price should be greater than targeted purchase price.
-		// if (!arrayContains(VALID_CURRENCIES, prices.currency)) throw;
-		require(prices.penalty_price > 0 || prices.target_price > 0 || prices.sell_price > 0);
-	}
+	uint private accept_payment;
+	function accept(string buyer_email) external payable {
+		require(state == ContractStates.Offered);
+		require(msg.value > accept_fee);
+		require(now <= expiration);
+		require(msg.sender != seller);
+		require(now <= depart_date_epoch);
 
-	function validateFlightInfo() constant private constant {
-		require(depart_date_epoch <= now);
-	}
-
-	// Purchase Logic
-
-	function buyContract(string buyer_email) external payable {
-//		require(conversion_rate != 0); // Conversion rate not set yet
-//		require(state == ContractStates.Offered);
-//		require(msg.value >= primaryToWei(prices.sell_price));
-//		require(now <= expiration);
-//		require(msg.sender != owner);
-//		require(now <= depart_date_epoch);
-
+		accept_payment = msg.value;
 		buyer = msg.sender;
 		buyer_contact_information = buyer_email;
-		startContract();
-		changeState(ContractStates.Purchased);
-		PurchasedEvent(buyer, owner, prices.sell_price);
+		changeState(ContractStates.Accepting);
 	}
 
-	function startContract() private {
-		setConversionRate();
+	function cancelAcceptExt() external onlyBuyer {
+		cancelAcceptInt();
 	}
+
+	function cancelAcceptInt() private {
+		require(state == ContractStates.Accepting);
+
+		asyncSend(buyer, safeSub(accept_payment, accept_fee));
+		accept_payment = 0;
+		buyer = address(0);
+		buyer_contact_information = '';
+		changeState(ContractStates.Offered);
+	}
+
+	function confirmAccept() private {
+		require(state == ContractStates.Accepting);
+
+		uint expected_value = safeAdd( primaryToWei(prices.sell_price), primaryToWei(accept_fee) );
+ 		if (expected_value > accept_payment) {
+			cancelAcceptInt();
+		} else {
+			uint diff = safeSub(safeSub(expected_value, accept_payment), accept_fee);
+			asyncSend(buyer, diff); // Send back the difference
+		}
+
+		changeState(ContractStates.Accepted);
+	}
+
 	// Termination Logic
 
 	function contractExpired() private {
@@ -217,7 +217,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 	// This function gets called periodically to adjust the money in the contract
 	function markToMarket() private {
 //		checkBalance();
-//		assert(state == ContractStates.BalanceVerified);
+//		assert(state == ContractStates.Verified);
 //		if (shouldBuy()) {
 //			internalBuyTicket(); // Purchase the ticket
 //		} else {
@@ -227,13 +227,12 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 //		}
 
         MarkedToMarketEvent(current_price, this.balance, expected_balance);
-		startContract();
 	}
 
 	function checkBalance() private {
 		// the contract has not been marked yet no reason to check
-		if (state == ContractStates.Purchased) {
-			changeState(ContractStates.BalanceVerified);
+		if (state == ContractStates.Accepted) {
+			changeState(ContractStates.Verified);
 			return;
 		}
 
@@ -260,7 +259,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 			asyncSend(owner, uint(balance_diff));
 		}
 
-		changeState(ContractStates.BalanceVerified);
+		changeState(ContractStates.Verified);
 	}
 
 	// Purchase Ticket Logic
@@ -271,28 +270,26 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 	function internalBuyTicket() private {
 		if (
-				state != ContractStates.Purchased &&
+				state != ContractStates.Accepted &&
 				state != ContractStates.Marked &&
-				state != ContractStates.BalanceVerified
+				state != ContractStates.Verified
 		) throw;
 
 		asyncSend(COMPANY, prices.target_price);
-		changeState(ContractStates.BuyingTicket);
+		changeState(ContractStates.Purchasing);
 	}
 
 	// TODO: This will not work as is
 	function externalBuyTicket() onlyOwner external returns (bool) {
 		if (
-				state != ContractStates.Purchased &&
+				state != ContractStates.Accepted &&
 				state != ContractStates.Marked &&
-				state != ContractStates.BalanceVerified
+				state != ContractStates.Verified
 		) return false;
-
-		setLowPrice('0');
 
 		if (shouldBuy()) {
 			asyncSend(COMPANY, prices.target_price);
-			changeState(ContractStates.BuyingTicket);
+			changeState(ContractStates.Purchasing);
 			return true;
 		}
 
@@ -301,7 +298,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 	// Confirm that the ticket was purchased, can only be called by overseeing company
 	function confirmTicketPurchased(string priv_key, int purchased_price) external payable {
-		if (state != ContractStates.BuyingTicket) throw;
+		if (state != ContractStates.Purchasing) throw;
 
 		if (!isValidPrivKey(priv_key)) throw;
 
@@ -317,20 +314,19 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 	function ticketPurchaseSuccess(uint purchased_price) private {
 		uint left_over = safeSub(prices.target_price, purchased_price);
-		uint owner_payment = safeAdd(this.balance, left_over);
-		asyncSend(owner, owner_payment);
+		uint seller_payment = safeAdd(this.balance, left_over);
+		asyncSend(owner, seller_payment);
 		changeState(ContractStates.TicketPurchased);
-//		PurchasedTicketEvent(purchased_price);
 	}
 
-	// TODO: Complete
-	function isValidPrivKey(string priv_key) private returns (bool) {
-		return true;
-	}
 
-	// Oracle Logic
+	/////////////////
+	/// ORACLIZE ////
+	/////////////////
 
-	// flow: startContract -> (wait 1 day) set conversion rate -> (no wait) setLowPrice -> markToMarket
+	// query ids
+	mapping(bytes32 => bool) query_id_list;
+	bytes32 private conversion_query_id;
 	function __callback(bytes32 query_id, string result) {
 		// check if this query_id was already processed before
 		require(query_id_list[query_id] == false);
@@ -340,85 +336,34 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		// just to be sure the calling address is the Oraclize authorized one
 		assert(msg.sender == oraclize_cbAddress());
 
-//		OraclizeCb(query_id, result, now);
+		OraclizeCb(query_id, result, now);
 
 		if (query_id == conversion_query_id) {
 			var (numerator, denominator) = stringToFraction(result);
 			setConversionRateCb(numerator, denominator);
-		} else if (query_id == conversion_immediate_query_id) {
-			(numerator, denominator) = stringToFraction(result);
-			setConversionRateImmediateCb(numerator, denominator);
-		} else if (query_id == price_query_id) {
-			uint low_price_primary = stringToUint(result);
-			setLowPriceCb(low_price_primary);
-		} else if (query_id == random_query_id) {
-			getRandomPriceCb(result);
-		} else {
-			throw;
 		}
 	}
 
 	// get conversion rate from primary to wei
 	function setConversionRate() {
 		// TODO: Should TLSNotary Proof be implemented?
-		string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
-		query = concat(query, '/data/price?fsym=', primary_currency);
-		query = concat(query, '&tsyms=ETH).ETH');
-		conversion_query_id = oraclize_query(1, 'URL', query, 4000000); // TODO: Change back to mark to market
+		conversion_query_id = oraclize_query('URL', CONVERSION_URL);
 	}
 
 	function setConversionRateCb(uint numerator, uint denominator) private {
 		conversion_rate = (numerator * etherToWei(1))/denominator;
-		getRandomPrice(); // TODO: Remove random price logic
+		confirmAccept();
 	}
 
-	// this sets conversion immediately instead of waiting for mark to market period and its cb doesn't start the get price query
-	function setConversionRateImmediate() {
-		// TODO: Should TLSNotary Proof be implemented?
-		string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
-		query = concat(query, '/data/price?fsym=', primary_currency);
-		query = concat(query, '&tsyms=ETH).ETH');
-		conversion_immediate_query_id = oraclize_query('URL', query);
-	}
 
-	function setConversionRateImmediateCb(uint numerator, uint denominator) {
-		conversion_rate = (numerator * etherToWei(1))/denominator;
-	}
+	///////////////
+	/// HELPERS ///
+	///////////////
 
-	// TODO: Remove random price logic
-	// Generate a random number for the price.
-	function getRandomPrice() constant private {
-		string memory query = concat(query, COMPANY_BASE_URL);
-		query = concat(query, GET_RANDOM_PRICE_ROUTE, '/');
-		query = concat(query, min_random_price, '/');
-		query = concat(query, max_random_price);
-		random_query_id = oraclize_query('URL', query, 4000000);
-	}
 
-	// TODO: Remove random price logic
-	function getRandomPriceCb(string price) constant private {
-		setLowPriceCb(stringToUint(price));
-	}
-
-	// TODO: Remove random price logic
-	function setLowPrice(string random_price) constant private {
-//		string memory query = 'json(';
-//		query = concat(query, COMPANY_BASE_URL);
-//		query = concat(query, COMPANY_TEST_ROUTE);
-//		query = concat(query, COMPANY_LOW_PRICE_ROUTE);
-//		query = concat(query, '/');
-//		query = concat(query, depart_location);
-//		query = concat(query, '/');
-//		query = concat(query, depart_date);
-//		query = concat(query, '/');
-//		query = concat(query, random_price);
-//		query = concat(query, ').price');
-//		price_query_id = oraclize_query('URL', query, 2000000);
-	}
-
-	function setLowPriceCb(uint low_price_primary) private {
-		current_price = primaryToWei(low_price_primary);
-		markToMarket();
+	// TODO: Complete
+	function isValidPrivKey(string priv_key) private returns (bool) {
+		return true;
 	}
 
 	// External Getters
@@ -434,7 +379,7 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 
 		string prev_state = state_strings[uint(state)];
 		state = _state;
-//		StateChangedEvent(prev_state, state_strings[uint(state)]);
+		StateChangedEvent(prev_state, state_strings[uint(state)]);
 	}
 
 	function arrayContainsNumber(int[] array, int val) constant private returns (bool) {
@@ -459,32 +404,21 @@ contract FlightFuture is SafeMath, Ownable, PullPayment, Converter, usingOracliz
 		if (assertion == false) throw;
 	}
 
-	function concat(string _a, string _b, string _c, string _d, string _e) internal returns (string) {
-		bytes memory _ba = bytes(_a);
-		bytes memory _bb = bytes(_b);
-		bytes memory _bc = bytes(_c);
-		bytes memory _bd = bytes(_d);
-		bytes memory _be = bytes(_e);
-		string memory abcde = new string(_ba.length + _bb.length + _bc.length + _bd.length + _be.length);
-		bytes memory babcde = bytes(abcde);
-		uint k = 0;
-		for (uint i = 0; i < _ba.length; i++) babcde[k++] = _ba[i];
-		for (i = 0; i < _bb.length; i++) babcde[k++] = _bb[i];
-		for (i = 0; i < _bc.length; i++) babcde[k++] = _bc[i];
-		for (i = 0; i < _bd.length; i++) babcde[k++] = _bd[i];
-		for (i = 0; i < _be.length; i++) babcde[k++] = _be[i];
-		return string(babcde);
+	function flightToString() constant private returns (string) {
+		string memory flight_string = strConcat('Leaving on ', depart_date, ' from ', depart_location);
+		flight_string = strConcat(flight_string, ' to ', destination_location);
+		return flight_string;
 	}
 
-	function concat(string _a, string _b, string _c, string _d) internal returns (string) {
-		return concat(_a, _b, _c, _d, "");
+	// Validators
+
+	function validatePrices() constant private constant {
+		require(prices.target_price < prices.sell_price); // Ticket sell price should be greater than targeted purchase price.
+		// if (!arrayContains(VALID_CURRENCIES, prices.currency)) throw;
+		require(prices.penalty_price > 0 || prices.target_price > 0 || prices.sell_price > 0);
 	}
 
-	function concat(string _a, string _b, string _c) internal returns (string) {
-		return concat(_a, _b, _c, "", "");
-	}
-
-	function concat(string _a, string _b) internal returns (string) {
-		return concat(_a, _b, "", "", "");
+	function validateFlightInfo() constant private constant {
+		require(depart_date_epoch <= now);
 	}
 }

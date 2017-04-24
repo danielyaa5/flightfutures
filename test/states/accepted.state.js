@@ -2,14 +2,14 @@
 
 const Promise = require('bluebird');
 const request = require('request-promise');
-const debug = require('debug')('contract-tests:flightfuture.purchased');
+const debug = require('debug')('contract-tests:flightfuture.accepted');
 
-const constants = require('./constants');
-const lib = require('./lib');
+const constants = require('../lib/constants');
+const lib = require('../lib/lib');
 
 const FlightFuture = artifacts.require('./FlightFuture');
 
-const purchased = function purchased(web3) {
+const accepted = function accepted(web3) {
     let future;
     const test_buyer_email = 'test@foobar.com';
     const penalty_price = web3.toWei(0.1);
@@ -27,9 +27,9 @@ const purchased = function purchased(web3) {
         'public_key'            // public key
     ];
 
-    contract('Purchased', (accounts) => {
+    contract('Accepted', (accounts) => {
 
     });
 };
 
-module.exports = purchased;
+module.exports = accepted;

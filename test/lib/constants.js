@@ -8,8 +8,8 @@ const ERRORS = {
     }
 };
 const STATES = {
-    NASCENT: 'Nascent', OFFERED: 'Offered', PURCHASED: 'Purchased', MARKED: 'Marked',
-    BALANCE_VERIFIED: 'BalanceVerified', BUYING_TICKET: 'BuyingTicket', TICKET_PURCHASED: 'TicketPurchased',
+    NASCENT: 'Nascent', OFFERED: 'Offered', ACCEPTED: 'Accepted', MARKED: 'Marked',
+    VERIFIED: 'Verified', PURCHASING: 'Purchasing', TICKET_PURCHASED: 'TicketPurchased',
     EXPIRED: 'Expired', DEFAULTED: 'Defaulted'
 };
 

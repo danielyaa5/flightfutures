@@ -3,7 +3,7 @@
 const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:flightfuture.purchased');
-const constants = require('./constants');
+const constants = require('../lib/constants');
 
 const FlightFuture = artifacts.require('./FlightFuture');
 
@@ -79,3 +79,5 @@ const nascent = function nascent(web3) {
         });
     });
 };
+
+module.exports = nascent;

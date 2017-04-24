@@ -1,9 +1,12 @@
 pragma solidity ^0.4.8;
 
+/**
+    -TODO: Remove random price logic
+    -TODO: Intelligently set gas limit for queries
+*/
 contract OraclizeStore is usingOraclize {
 
     // Constants
-
     address constant ORACLIZE = 0x1f2023555C63CA496C3A896fCDd31380476CC8f3;
 
     // urls
@@ -13,6 +16,19 @@ contract OraclizeStore is usingOraclize {
     // routes
     string constant GET_RANDOM_PRICE_ROUTE = '/contract/test/price/random';
 
+    // Internals
+    uint internal conversion_rate;
+
+    // Privates
+
+    address private future_address;
+
+    // query ids
+    bytes32 private conversion_query_id;
+    bytes32 private conversion_immediate_query_id;
+    bytes32 private price_query_id;
+    bytes32 private random_query_id;
+
     // Events
 
     event OraclizeCb(
@@ -21,7 +37,7 @@ contract OraclizeStore is usingOraclize {
         uint timestamp
     );
 
-    // constructor
+    // Constructor
     function OraclizeStore(){
         OAR = OraclizeAddrResolverI(ORACLIZE); // TODO: Remove before production
     }
@@ -60,46 +76,16 @@ contract OraclizeStore is usingOraclize {
         string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
         query = concat(query, '/data/price?fsym=', primary_currency);
         query = concat(query, '&tsyms=ETH).ETH');
-        conversion_query_id = oraclize_query(1, 'URL', query, 4000000); // TODO: Change back to mark to market
+        conversion_query_id = oraclize_query('URL', query, 4000000); // TODO: Change back to mark to market
     }
 
     function setConversionRateCb(uint numerator, uint denominator) private {
         conversion_rate = (numerator * etherToWei(1))/denominator;
-        getRandomPrice(); // TODO: Remove random price logic
+        setLowPrice();
     }
 
-    // this sets conversion immediately instead of waiting for mark to market period and its cb doesn't start the get price query
-    function setConversionRateImmediate() {
-        // TODO: Should TLSNotary Proof be implemented?
-        string memory query = concat('json(', CRYPTO_COMPARE_BASE_URL);
-        query = concat(query, '/data/price?fsym=', primary_currency);
-        query = concat(query, '&tsyms=ETH).ETH');
-        conversion_immediate_query_id = oraclize_query('URL', query);
-    }
-
-    function setConversionRateImmediateCb(uint numerator, uint denominator) {
-        conversion_rate = (numerator * etherToWei(1))/denominator;
-    }
-
-    // TODO: Remove random price logic
-    // Generate a random number for the price.
-    function getRandomPrice() constant private {
-        string memory query = 'json(';
-        query = concat(query, COMPANY_BASE_URL);
-        query = concat(query, GET_RANDOM_PRICE_ROUTE, '/');
-        query = concat(query, min_random_price, '/');
-        query = concat(query, max_random_price);
-        query = concat(query, ').price');
-        random_query_id = oraclize_query('URL', query, 4000000);
-    }
-
-    // TODO: Remove random price logic
-    function getRandomPriceCb(string price) constant private {
-        setLowPriceCb(stringToUint(price));
-    }
-
-    // TODO: Remove random price logic
     function setLowPrice(string random_price) constant private {
+        getRandomPrice();
         //		string memory query = 'json(';
         //		query = concat(query, COMPANY_BASE_URL);
         //		query = concat(query, COMPANY_TEST_ROUTE);
@@ -117,5 +103,20 @@ contract OraclizeStore is usingOraclize {
     function setLowPriceCb(uint low_price_primary) private {
         current_price = primaryToWei(low_price_primary);
         markToMarket();
+    }
+
+    // Generate a random number for the price.
+    function getRandomPrice() constant private {
+        string memory query = 'json(';
+        query = concat(query, COMPANY_BASE_URL);
+        query = concat(query, GET_RANDOM_PRICE_ROUTE, '/');
+        query = concat(query, min_random_price, '/');
+        query = concat(query, max_random_price);
+        query = concat(query, ').price');
+        random_query_id = oraclize_query('URL', query, 4000000);
+    }
+
+    function getRandomPriceCb(string price) constant private {
+        setLowPriceCb(stringToUint(price));
     }
 }

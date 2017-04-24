@@ -12,8 +12,8 @@ const TestRPC = require("ethereumjs-testrpc");
 const Web3 = require('web3');
 
 
-const constants = require('../constants');
-const lib = require('../lib');
+const constants = require('../lib/constants');
+const lib = require('../lib/lib');
 
 const provider = TestRPC.provider();
 const web3 = new Web3(provider);
