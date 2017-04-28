@@ -13,7 +13,7 @@ const Web3 = require('web3');
 
 
 const constants = require('../lib/constants');
-const lib = require('../lib/lib');
+const lib = require('../lib/utils');
 
 const provider = TestRPC.provider();
 const web3 = new Web3(provider);

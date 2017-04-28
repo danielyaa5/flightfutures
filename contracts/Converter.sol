@@ -9,8 +9,8 @@ contract Converter {
 		return amount *  1000000000000000000;
 	}
 
-	function daysToMs(uint amount_days) returns (uint convertedAmount) {
-		return amount_days * 86400000;
+	function daysToSecs(uint amount_days) returns (uint convertedAmount) {
+		return amount_days * 24 * 60 * 60;
 	}
 
 	function appendUintToString(string inStr, uint v) constant returns (string str) {

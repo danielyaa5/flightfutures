@@ -5,7 +5,7 @@ const request = require('request-promise');
 const debug = require('debug')('contract-tests:flightfuture.accepted');
 
 const constants = require('../lib/constants');
-const lib = require('../lib/lib');
+const utils = require('../lib/utils');
 
 const FlightFuture = artifacts.require('./FlightFuture');
 

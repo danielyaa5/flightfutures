@@ -26,13 +26,21 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 	// Public
 
+	Prices public prices;
 	address public seller;
 	address public buyer;
-	uint public accept_fee;
+	uint public contract_length; // seconds
+	uint public expiration;
+	uint public accept_fee; // wei
 	uint public creation_timestamp;
 	uint public conversion_rate; // primary currency to wei
 	string public min_random_price; // REMOVE before prod
 	string public max_random_price; // REMOVE before prod
+
+	// flight info
+	string public depart_date;
+	string public depart_location;
+	string public destination_location;
 
 	// Private
 
@@ -40,31 +48,23 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 	['Nascent', 'Offered', 'Accepting', 'Accepted', 'Marked', 'Verified', 'Purchasing', 'TicketPurchased', 'Expired', 'Defaulted', 'Canceled'];
 	string private buyer_contact_information;
 	string private seller_contact_information;
-	string private pub_key;
 	string private primary_currency = 'USD';
-	uint private expiration;
-
-	// flight info
-	string private depart_date;
-	string private depart_location;
-	string private destination_location;
 
 	// prices and balances in wei
 	uint private current_price;
 	uint private expected_balance;
-	uint depart_date_epoch;
+	uint private depart_date_epoch;
 
 	// Structs
 
 	struct Prices {
         // TODO: add change price function
-        uint sell_price; 		// wei
+        uint sell_price; 		// primary
 
         // TODO: should be hidden
         uint target_price; 		// primary
         uint penalty_price; 	// wei
 	}
-	Prices private prices;
 
 	// Events
 
@@ -90,7 +90,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		string _prev_state,
 		string _new_state
 	);
-	event OraclizeCb(
+	event OraclizeCbEvent(
         bytes32 query_id,
         string result,
         uint timestamp
@@ -116,6 +116,8 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 	// Constructor
 
 	function FlightFuture(uint _accept_fee) {
+		if (_accept_fee == 0) throw;
+
 		OAR = OraclizeAddrResolverI(ORACLIZE); // TODO: Remove before production
 		accept_fee = _accept_fee;
 		creation_timestamp = now;
@@ -133,15 +135,14 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
         string flight_destination_location,
 
         // Prices, all prices in lowest denomination of currency
-        uint sell_price, 		// wei
+        uint sell_price, 		// primary
         uint target_price, 		// primary
         uint penalty_price, 	// wei
 
-        uint contract_length, 	// days
+        uint _contract_length, 	// days
         string seller_email
 	) external payable {
 		require(state == ContractStates.Nascent);
-		require(msg.sender == owner);
         require(msg.value == penalty_price); 							// To create a contract, you must put the failure penalty up. Prevents backing out.
 
 		prices = Prices(sell_price, target_price, penalty_price);
@@ -149,7 +150,8 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		depart_date = flight_depart_date;
 		depart_location = flight_depart_location;
 		destination_location = flight_destination_location;
-		expiration = safeAdd(now, daysToMs(contract_length));
+    	contract_length = _contract_length;
+		expiration = now + contract_length * 1 days;
     	seller_contact_information = seller_email;
     	seller = msg.sender;
 
@@ -336,7 +338,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		// just to be sure the calling address is the Oraclize authorized one
 		assert(msg.sender == oraclize_cbAddress());
 
-		OraclizeCb(query_id, result, now);
+		OraclizeCbEvent(query_id, result, now);
 
 		if (query_id == conversion_query_id) {
 			var (numerator, denominator) = stringToFraction(result);
@@ -366,10 +368,24 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		return true;
 	}
 
-	// External Getters
+	// External Getters/Setters
+
+	function getTime() external returns (uint) {
+		return now;
+	}
+
+	function getSellerContactInfo() external returns (string)  {
+    	assert(msg.sender == owner || msg.sender == seller);
+		return seller_contact_information;
+	}
 
 	function getState() external constant returns (string) {
 		return state_strings[uint(state)];
+	}
+
+	// used for testing
+	function setState(uint _state) external onlyOwner {
+		state = ContractStates(_state);
 	}
 
 	// General Helpers

@@ -1,1 +1,1 @@
-. ~/.nvm/nvm.sh use stable && clear && testrpc --mnemonic "flight future mnemonic" --accounts 50
+. ~/.nvm/nvm.sh use stable && kill -9 $(lsof -i tcp:8545); clear && testrpc --mnemonic "flight future mnemonic" --accounts 50

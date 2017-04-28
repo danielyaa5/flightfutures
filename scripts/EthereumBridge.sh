@@ -1,3 +1,3 @@
 #!/bin/bash
 
-. ~/.nvm/nvm.sh use stable && cd ./ethereum-bridge && clear && node bridge a 49
+. ~/.nvm/nvm.sh use stable && node -v && sleep 3 && cd ./ethereum-bridge && clear && node bridge -a 49
