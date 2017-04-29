@@ -10,11 +10,18 @@ import './Purchasable.sol';
 import './Converter.sol';
 
 /**
+	Conventions
+		- Functions: camelCase
+		- Variable: snake_case
+		- Private/Internal function: _camelCase with leading underscore
+		- Contract Names: PascalCase
+
 	TODO (General):
 		- Add more logging
         - Validate all param data
 		- Move setting of conversion_rate and current_price to their own functions
 		- Shorten variable names
+		- Make future logic inheritable to flight future
 */
 contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter, usingOraclize {
 
@@ -22,13 +29,14 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 	address constant COMPANY = address(0);
 	address constant ORACLIZE = 0x6f485C8BF6fc43eA212E93BBF8ce046C7f1cb475;
-    string constant CONVERSION_URL = 'JSON(https://min-api.cryptocompare.com/data/price?fsym=USD&tsyms=ETH';
+    string constant CONVERSION_URL = 'json(https://min-api.cryptocompare.com/data/price?fsym=USD&tsyms=ETH).ETH';
 
 	// Public
 
 	Prices public prices;
 	address public seller;
 	address public buyer;
+	uint public oraclize_url_query_cost;
 	uint public contract_length; // seconds
 	uint public expiration;
 	uint public accept_fee; // wei
@@ -155,7 +163,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
     	seller_contact_information = seller_email;
     	seller = msg.sender;
 
-		changeState(ContractStates.Offered);
+		_changeState(ContractStates.Offered);
 	}
 
 	// Accepting Logic
@@ -171,78 +179,80 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		accept_payment = msg.value;
 		buyer = msg.sender;
 		buyer_contact_information = buyer_email;
-		changeState(ContractStates.Accepting);
+		_setConversionRate();
+		_changeState(ContractStates.Accepting);
 	}
 
-	function cancelAcceptExt() external onlyBuyer {
-		cancelAcceptInt();
+	function cancelAccept() external onlyBuyer {
+		_cancelAccept();
 	}
 
-	function cancelAcceptInt() private {
+	function _cancelAccept() private {
 		require(state == ContractStates.Accepting);
 
-		asyncSend(buyer, safeSub(accept_payment, accept_fee));
+		asyncSend(buyer, accept_payment); // oraclize fees are automatically taken out of msg.value (oraclize fee + oraclize gas cost)
 		accept_payment = 0;
 		buyer = address(0);
 		buyer_contact_information = '';
-		changeState(ContractStates.Offered);
+		_changeState(ContractStates.Offered);
 	}
 
-	function confirmAccept() private {
+	function _confirmAccept() private {
+    	require(conversion_rate > 0);
 		require(state == ContractStates.Accepting);
 
-		uint expected_value = safeAdd( primaryToWei(prices.sell_price), primaryToWei(accept_fee) );
+		uint expected_value = safeAdd( _primaryToWei(prices.sell_price), accept_fee);
  		if (expected_value > accept_payment) {
-			cancelAcceptInt();
+			_cancelAccept();
 		} else {
-			uint diff = safeSub(safeSub(expected_value, accept_payment), accept_fee);
+			uint diff = safeSub(accept_payment, expected_value);
 			asyncSend(buyer, diff); // Send back the difference
 		}
 
-		changeState(ContractStates.Accepted);
+		_changeState(ContractStates.Accepted);
 	}
 
 	// Termination Logic
 
-	function contractExpired() private {
+	function _contractExpired() private {
 		asyncSend(buyer, this.balance);
-		changeState(ContractStates.Expired);
+		_changeState(ContractStates.Expired);
 	}
 
-	function ownerDefault() private {
+	function _ownerDefault() private {
 		asyncSend(buyer, this.balance);
-		changeState(ContractStates.Defaulted);
+		_changeState(ContractStates.Defaulted);
 	}
 
 	// Mark to Market Logic
 
 	// This function gets called periodically to adjust the money in the contract
-	function markToMarket() private {
-//		checkBalance();
+	function _markToMarket() private {
+//		_checkBalance();
 //		assert(state == ContractStates.Verified);
-//		if (shouldBuy()) {
-//			internalBuyTicket(); // Purchase the ticket
+//		if (_shouldBuy()) {
+//			_buyTicket(); // Purchase the ticket
 //		} else {
 //			expected_balance = safeAdd(current_price, prices.penalty_price);
-//			changeState(ContractStates.Marked);
+//			_changeState(ContractStates.Marked);
 //			MarkedToMarketEvent(current_price, this.balance, expected_balance);
 //		}
 
         MarkedToMarketEvent(current_price, this.balance, expected_balance);
 	}
 
-	function checkBalance() private {
+	function _checkBalance() private {
 		// the contract has not been marked yet no reason to check
 		if (state == ContractStates.Accepted) {
-			changeState(ContractStates.Verified);
+			_changeState(ContractStates.Verified);
 			return;
 		}
 
-		// if the contract isn't marked to market we shouldn't be calling checkBalance
+		// if the contract isn't marked to market we shouldn't be calling _checkBalance
 		assert(state == ContractStates.Marked);
 
 		if (expiration <= now) {
-			contractExpired();
+			_contractExpired();
 			return;
 		}
 
@@ -252,7 +262,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 		// if the there is a negative balance, the contract has a deficit and is overdue
 		if (balance_diff < 0) {
-			ownerDefault();
+			_ownerDefault();
 			return;
 		}
 
@@ -261,16 +271,16 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 			asyncSend(owner, uint(balance_diff));
 		}
 
-		changeState(ContractStates.Verified);
+		_changeState(ContractStates.Verified);
 	}
 
 	// Purchase Ticket Logic
 
-	function shouldBuy() private returns (bool) {
-		return current_price <= primaryToWei(prices.target_price);
+	function _shouldBuy() private returns (bool) {
+		return current_price <= _primaryToWei(prices.target_price);
 	}
 
-	function internalBuyTicket() private {
+	function _buyTicket() private {
 		if (
 				state != ContractStates.Accepted &&
 				state != ContractStates.Marked &&
@@ -278,20 +288,20 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		) throw;
 
 		asyncSend(COMPANY, prices.target_price);
-		changeState(ContractStates.Purchasing);
+		_changeState(ContractStates.Purchasing);
 	}
 
 	// TODO: This will not work as is
-	function externalBuyTicket() onlyOwner external returns (bool) {
+	function buyTicket() onlyOwner external returns (bool) {
 		if (
 				state != ContractStates.Accepted &&
 				state != ContractStates.Marked &&
 				state != ContractStates.Verified
 		) return false;
 
-		if (shouldBuy()) {
+		if (_shouldBuy()) {
 			asyncSend(COMPANY, prices.target_price);
-			changeState(ContractStates.Purchasing);
+			_changeState(ContractStates.Purchasing);
 			return true;
 		}
 
@@ -302,23 +312,23 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 	function confirmTicketPurchased(string priv_key, int purchased_price) external payable {
 		if (state != ContractStates.Purchasing) throw;
 
-		if (!isValidPrivKey(priv_key)) throw;
+		if (!_isValidPrivKey(priv_key)) throw;
 
 		bool success = purchased_price > -1;
 
 		if (success) {
-			ticketPurchaseSuccess(uint(purchased_price));
+			_ticketPurchaseSuccess(uint(purchased_price));
 		} else {
 			if (msg.value != prices.target_price) throw;
-			markToMarket();
+			_markToMarket();
 		}
 	}
 
-	function ticketPurchaseSuccess(uint purchased_price) private {
+	function _ticketPurchaseSuccess(uint purchased_price) private {
 		uint left_over = safeSub(prices.target_price, purchased_price);
 		uint seller_payment = safeAdd(this.balance, left_over);
 		asyncSend(owner, seller_payment);
-		changeState(ContractStates.TicketPurchased);
+		_changeState(ContractStates.TicketPurchased);
 	}
 
 
@@ -340,21 +350,25 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 		OraclizeCbEvent(query_id, result, now);
 
+		oraclize_url_query_cost = oraclize_getPrice('URL');
+
 		if (query_id == conversion_query_id) {
-			var (numerator, denominator) = stringToFraction(result);
-			setConversionRateCb(numerator, denominator);
+			_setConversionRateCb(result);
+		} else {
+			throw;
 		}
 	}
 
 	// get conversion rate from primary to wei
-	function setConversionRate() {
+	function _setConversionRate() private {
 		// TODO: Should TLSNotary Proof be implemented?
-		conversion_query_id = oraclize_query('URL', CONVERSION_URL);
+		conversion_query_id = oraclize_query('URL', CONVERSION_URL, 500000);
 	}
 
-	function setConversionRateCb(uint numerator, uint denominator) private {
+	function _setConversionRateCb(string result) private {
+		var (numerator, denominator) = stringToFraction(result);
 		conversion_rate = (numerator * etherToWei(1))/denominator;
-		confirmAccept();
+		_confirmAccept();
 	}
 
 
@@ -364,7 +378,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 
 	// TODO: Complete
-	function isValidPrivKey(string priv_key) private returns (bool) {
+	function _isValidPrivKey(string priv_key) private returns (bool) {
 		return true;
 	}
 
@@ -390,11 +404,11 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 	// General Helpers
 
-	function changeState(ContractStates _state) private {
-		if (_state == state) return;
+	function _changeState(ContractStates new_state) private {
+		if (new_state == state) return;
 
 		string prev_state = state_strings[uint(state)];
-		state = _state;
+		state = new_state;
 		StateChangedEvent(prev_state, state_strings[uint(state)]);
 	}
 
@@ -405,7 +419,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		return false;
 	}
 
-	function primaryToWei(uint price) constant private returns (uint) {
+	function _primaryToWei(uint price) constant private returns (uint) {
 		assert(conversion_rate != 0);
 		return convert(price, conversion_rate);
 	}
@@ -420,7 +434,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 		if (assertion == false) throw;
 	}
 
-	function flightToString() constant private returns (string) {
+	function _flightToString() constant private returns (string) {
 		string memory flight_string = strConcat('Leaving on ', depart_date, ' from ', depart_location);
 		flight_string = strConcat(flight_string, ' to ', destination_location);
 		return flight_string;
@@ -428,13 +442,13 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 
 	// Validators
 
-	function validatePrices() constant private constant {
+	function _validatePrices() constant private constant {
 		require(prices.target_price < prices.sell_price); // Ticket sell price should be greater than targeted purchase price.
 		// if (!arrayContains(VALID_CURRENCIES, prices.currency)) throw;
 		require(prices.penalty_price > 0 || prices.target_price > 0 || prices.sell_price > 0);
 	}
 
-	function validateFlightInfo() constant private constant {
+	function _validateFlightInfo() constant private constant {
 		require(depart_date_epoch <= now);
 	}
 }

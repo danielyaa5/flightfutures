@@ -106,7 +106,7 @@ contract('FlightFuture.Accepting', (accounts) => {
 
     it('should not allow the user to accept contract if they are also the seller', (done) => {
         Promise.coroutine(function* () {
-            yield future.setState(utils.getStateIndex(constants.STATES.OFFERED), { from: owner_account });
+            yield future.setState(constants.helpers.getStateIndex(constants.STATES.OFFERED), { from: owner_account });
 
             const curr_state = yield future.getState();
             assert.equal(constants.STATES.OFFERED, curr_state.toString());
@@ -128,6 +128,8 @@ contract('FlightFuture.Accepting', (accounts) => {
         })().catch(done);
     });
 
+    // THIS TEST WILL NOT WORK UNTIL TEST RPC ALLOWS YOU TO RESET TIME ADJUSTMENTS, AWAITING PR MERGE
+    
     // it('should not allow the user to accept contract if the current datetime is past the expiration', (done) => {
     //     Promise.coroutine(function* () {
     //         let snap;
