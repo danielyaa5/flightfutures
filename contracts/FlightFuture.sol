@@ -227,8 +227,8 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 	// Mark to Market Logic
 
 	// This function gets called periodically to adjust the money in the contract
-	function _markToMarket() private {
-//		_checkBalance();
+	function markToMarket() external onlyOwner {
+//		_verifyBalance();
 //		assert(state == ContractStates.Verified);
 //		if (_shouldBuy()) {
 //			_buyTicket(); // Purchase the ticket
@@ -241,14 +241,14 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
         MarkedToMarketEvent(current_price, this.balance, expected_balance);
 	}
 
-	function _checkBalance() private {
+	function _verifyBalance() private {
 		// the contract has not been marked yet no reason to check
 		if (state == ContractStates.Accepted) {
 			_changeState(ContractStates.Verified);
 			return;
 		}
 
-		// if the contract isn't marked to market we shouldn't be calling _checkBalance
+		// if the contract isn't marked to market we shouldn't be calling _verifyBalance
 		assert(state == ContractStates.Marked);
 
 		if (expiration <= now) {
@@ -320,7 +320,7 @@ contract FlightFuture is Purchasable, SafeMath, Ownable, PullPayment, Converter,
 			_ticketPurchaseSuccess(uint(purchased_price));
 		} else {
 			if (msg.value != prices.target_price) throw;
-			_markToMarket();
+			markToMarket();
 		}
 	}
 

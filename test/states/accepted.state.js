@@ -158,6 +158,26 @@ contract('FlightFuture.Accepted', (accounts) => {
 
     it('should fail on cancelAccept transaction if state is not accepting', (done) => {
         Promise.coroutine(function*() {
+            for(let i=0; i < constants.ALL_STATES.length; i++) {
+                if (constants.ALL_STATES[i] === constants.STATES.ACCEPTING) continue;
+
+                yield future.setState(i, {from: owner_account});
+
+                const curr_state = yield future.getState();
+
+                assert.equal(constants.ALL_STATES[i], curr_state.toString());
+                try
+                {
+                    assert.equal(curr_state, constants.ALL_STATES[i], 'Current state of the contract should be equal to the state in the iteration');
+
+                    yield future.cancelAccept({ from: buyer_account });
+                    throw Error('Expected the offer transaction to throw since we are not in the Accepting state.');
+                }
+                catch (err)
+                {
+                    assert(utils.isInvalidJumpErr(err), `Expected invalid job error but got: ${err}`);
+                }
+            }
             return done();
         })().catch(done);
     });
