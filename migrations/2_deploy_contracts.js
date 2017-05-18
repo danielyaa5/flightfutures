@@ -1,7 +1,7 @@
 'use strict';
 
-const FlightFuture = artifacts.require('./FlightFuture.sol');
+const Dao = artifacts.require('./Dao.sol');
 
 module.exports = function(deployer) {
-    // deployer.deploy(FlightFuture);
+    deployer.deploy(Dao);
 };
