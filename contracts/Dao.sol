@@ -11,9 +11,11 @@ import './StringUtils.sol';
 contract Dao is Ownable, SafeMath, PullPayment, StringUtils, Oracle {
     function Dao() {}
 
-    function newFlightFuture(
-        address buyer_address,
+    event NewFlightFutureEvent(
+        address _contract
+    );
 
+    function newFlightFuture(
         string flight_info,
 
         // prices
@@ -23,10 +25,10 @@ contract Dao is Ownable, SafeMath, PullPayment, StringUtils, Oracle {
         uint contract_length, 	  // days
         uint mark_to_market_rate, // hrs
         string seller_email
-    ) external returns (address) {
+    ) external {
         FlightFuture new_contract = new FlightFuture(this, msg.sender, flight_info,
             sell_price, target_price, contract_length, mark_to_market_rate, seller_email);
-        addAllowedAddress(address(new_contract));
-        return address(new_contract);
+        addAllowedAddress(new_contract);
+        NewFlightFutureEvent(new_contract);
     }
 }

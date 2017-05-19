@@ -99,7 +99,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     function offer(
         address dao_address,
-        address buyer_address,
+        address seller_address,
         // prices, all prices in lowest denomination of currency
         uint sell_price, 		// primary
         uint target_price, 		// primary
@@ -109,19 +109,19 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         string seller_email,
         string _price_feed_url,
         string _conversion_feed_url
-    ) external payable {
+    ) payable {
         require(state == ContractStates.Nascent);
 
         DaoContract = Dao(dao_address);
-        buyer = buyer_address;
         creation_timestamp = now;
         prices = Prices(sell_price, target_price);
         contract_length = _contract_length;
         expiration = now + contract_length * 1 days;
         seller_contact_information = seller_email;
-        seller = msg.sender;
+        seller = seller_address;
         price_feed_url = _price_feed_url;
         conversion_feed_url = _conversion_feed_url;
+        mark_to_market_rate = _mark_to_market_rate;
 
         _changeState(ContractStates.Offered);
     }

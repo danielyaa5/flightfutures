@@ -9,36 +9,66 @@ const constants = require('../lib/constants');
 const Dao = artifacts.require('./Dao');
 const web3 = utils.web3;
 
+let dao;
+let new_flight_future_address;
+
+const flight_info = 'LAX+CDG+10/21/2017';
+const sell_price = 600;
+const target_price = 400;
+const contract_length = 60;
+const mark_to_market_rate = 1 * 24;
+const seller_email = 'danielyaa5@gmail.com';
+const default_valid  = [
+    flight_info, sell_price, target_price, contract_length, mark_to_market_rate, seller_email
+];
+
 contract('DAO', (accounts) => {
-  let dao;
+    const owner_account = accounts[0];
+    const seller_account = accounts[1];
 
-  const owner_account = accounts[0];
+   describe('newFlightFuture', () => {
+        it('should be able to create a new FlightFuture contract', (done) => {
+            Promise.coroutine(function*() {
+                dao = yield Dao.deployed();
+                const tx = yield dao.newFlightFuture.apply(this, default_valid);
+                const new_flight_future_logs = tx.logs.filter(log => log.event === 'NewFlightFutureEvent');
+                new_flight_future_address = new_flight_future_logs[0].args._contract;
+                const is_allowed = yield dao.isAllowedAddress(new_flight_future_address);
+                debug(`The new address was added to the AllowedAddressMap? ${is_allowed}`);
+                debug(`newFlightFuture tx logs \n ${new_flight_future_logs}`);
 
-  const buyer_address = accounts[1];
-  const flight_info = 'LAX+CDG+10/21/2017';
-  const sell_price = 600;
-  const target_price = 400;
-  const contract_length = 60;
-  const mark_to_market_rate = 1 * 24;
-  const seller_email = 'danielyaa5@gmail.com';
-  const default_valid  = [
-      buyer_address, flight_info, sell_price, target_price, contract_length, mark_to_market_rate, seller_email
-  ];
+                // assertions
+                assert.equal(new_flight_future_logs.length, 1, 'Expect there to be only one new FlightFuture created');
+                assert.notEqual(new_flight_future_address.length, 0, 'Expected the address not to be an empty string');
+                assert.notEqual(Number(new_flight_future_address), 0, 'Expected the address not to be the zero address');
+                assert(is_allowed === true, 'Expected the new address to be added to the AllowedAddressMap');
 
-  it('should be able to create a valid new FlightFuture', (done) => {
-    Promise.coroutine(function*() {
-      dao = yield Dao.deployed();
-      yield dao.newFlightFuture.apply(this, default_valid);
+                return done();
+            })().catch(done);
+        });
+   });
 
-      return done();
-    })().catch(done);
+  describe('request', () => {
+      it('should throw when Oracle request tx is not made from a FlightFuture contract', (done) => {
+          Promise.coroutine(function*() {
+              dao = yield Dao.deployed();
+
+              let err;
+              try {
+                  dao.request('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=BTC,USD,EUR', null);
+              } catch(e) {
+                 err = e;
+              } finally {
+                  if (!err) throw Error('Expected request to fail since transaction made from non future contract address');
+              }
+              return done();
+          })().catch(done);
+      });
+
+      it('should add valid request when request tx is made');
+      it('should add a valid request when request tx is made');
+      it('should call the request callback with result value upon response');
+      it('should wait before making query if timeout specified');
+      it('should throw if the response for the same query_id was already made');
   });
-  it('should store the new FlightFuture contract in state map');
-  it('should emit NewFlightFutureEvent upon creation');
-  it('should throw when request tx is not made from a FlightFuture contract');
-  it('should add valid request when request tx is made');
-  it('should add a valid request when request tx is made');
-  it('should call the request callback with result value upon response');
-  it('should wait before making query if timeout specified');
-  it('should throw if the response for the same query_id was already made');
 });

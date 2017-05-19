@@ -113,7 +113,7 @@ contract('Offered', (accounts) => {
             yield future.offer.apply(this, valid_offer_params.concat(transaction_options));
 
             return done();
-        })().catch(done).catch(done);
+        })().catch(done);
     });
 
     it('should have a contract balance equal to the payment penalty', (done) => {

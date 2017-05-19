@@ -31,6 +31,10 @@ contract Oracle is Ownable {
         addAllowedAddress(msg.sender);
     }
 
+    function isAllowedAddress(address addr) constant external returns (bool) {
+      return AllowedAddressMap[addr];
+    }
+
     function addAllowedAddress(address addr) onlyOwner {
         AllowedAddressMap[addr] = true;
     }

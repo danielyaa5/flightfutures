@@ -23,7 +23,7 @@ contract FlightFuture is Future {
     //	 Structs
 	function FlightFuture(
 		address dao_address,
-		address buyer_address,
+		address seller_address,
 
         // flight info
         string _flight_info,
@@ -39,7 +39,7 @@ contract FlightFuture is Future {
 		// flight info
 		flight_info = _flight_info;
 		string memory price_flight_url = strConcat(PRICE_FLIGHT_BASE_URL, '/', flight_info);
-//		this.offer(dao_address, buyer_address, sell_price, target_price, contract_length, mark_to_market_rate, seller_email, price_flight_url, CONVERSION_URL);
+		offer(dao_address, seller_address, sell_price, target_price, contract_length, mark_to_market_rate, seller_email, price_flight_url, CONVERSION_URL);
 	}
 }
 
