@@ -47,28 +47,4 @@ contract('DAO', (accounts) => {
             })().catch(done);
         });
    });
-
-  describe('request', () => {
-      it('should throw when Oracle request tx is not made from a FlightFuture contract', (done) => {
-          Promise.coroutine(function*() {
-              dao = yield Dao.deployed();
-
-              let err;
-              try {
-                  dao.request('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=BTC,USD,EUR', null);
-              } catch(e) {
-                 err = e;
-              } finally {
-                  if (!err) throw Error('Expected request to fail since transaction made from non future contract address');
-              }
-              return done();
-          })().catch(done);
-      });
-
-      it('should add valid request when request tx is made');
-      it('should add a valid request when request tx is made');
-      it('should call the request callback with result value upon response');
-      it('should wait before making query if timeout specified');
-      it('should throw if the response for the same query_id was already made');
-  });
 });

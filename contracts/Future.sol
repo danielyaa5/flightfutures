@@ -93,7 +93,9 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     ContractStates private state = ContractStates.Nascent;
 
     // Constructor
-    function Future() {}
+    function Future() {
+        creation_timestamp = now;
+    }
 
     // Offer Logic
 
@@ -113,7 +115,6 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         require(state == ContractStates.Nascent);
 
         DaoContract = Dao(dao_address);
-        creation_timestamp = now;
         prices = Prices(sell_price, target_price);
         contract_length = _contract_length;
         expiration = now + contract_length * 1 days;
@@ -197,5 +198,10 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     // TODO: Remove after updating solidity version
     function assert(bool assertion) private {
         if (assertion == false) throw;
+    }
+
+    // Getters/Setters
+    function getState() constant returns (string) {
+        return state_strings[uint(state)];
     }
 }
