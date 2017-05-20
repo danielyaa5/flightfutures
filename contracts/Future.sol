@@ -14,10 +14,10 @@ import './Dao.sol';
 		- Add more logging
         - Validate all param data
 		- Shorten variable names
+		- Upgrade installed contracts
+		- Upgrade solidity version
 */
-contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, StringUtils {
-
-    // Constants
+contract Future is Purchasable, SafeMath, Ownable, PullPayment {
 
     // Public
 
@@ -25,30 +25,29 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     address public seller;
     address public buyer;
+    address public dao_owner;
 
     uint public sell_price;
     uint public contract_length; // seconds
     uint public expiration;
     uint public creation_timestamp;
     uint public conversion_rate; // primary currency to wei
-    uint public accept_fee = 0;
     uint public mark_to_market_rate;
+
+    // prices and balances in wei
+    uint public current_price;
+    uint public expected_balance;
+    uint public target_price;
 
     string public conversion_feed_url;
     string public price_feed_url;
+    string public buyer_email;
+    string public seller_email;
 
     // Private
 
     string[11] private state_strings =
     ['Nascent', 'Offered', 'Accepting', 'Accepted', 'Marked', 'Verified', 'Expired', 'Defaulted', 'Canceled'];
-
-    string private buyer_email;
-    string private seller_email;
-
-    // prices and balances in wei
-    uint private current_price;
-    uint private expected_balance;
-    uint private target_price;
 
     // Events
 
@@ -96,6 +95,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     function offer(
         address dao_address,
         address seller_address,
+        address _dao_owner,
         // prices, all prices in lowest denomination of currency
         uint _sell_price, 		// primary
         uint _target_price, 		// primary
@@ -109,6 +109,8 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         require(state == ContractStates.Nascent);
 
         DaoContract = Dao(dao_address);
+        owner = _dao_owner;
+        dao_owner = _dao_owner;
         sell_price = _sell_price;
         target_price = _target_price;
         contract_length = _contract_length;
@@ -124,10 +126,10 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     // Accepting Logic
 
-    uint private accept_payment;
+    uint public accept_payment;
     function accept(string _buyer_email) external payable {
         require(state == ContractStates.Offered);
-        require(msg.value > accept_fee);
+        require(msg.value > 0);
         require(now <= expiration);
         require(msg.sender != seller);
 
@@ -155,13 +157,13 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     function confirmAccept(string _conversion_rate) {
         if (msg.sender != address(DaoContract)) throw;
 
-        uint _conversion_rate_uint = parseInt(_conversion_rate);
+        uint _conversion_rate_uint = StringUtils.parseInt(_conversion_rate);
 
         require(_conversion_rate_uint > 0);
         require(state == ContractStates.Accepting);
 
         conversion_rate = _conversion_rate_uint;
-        uint expected_value = safeAdd( _primaryToWei(sell_price), accept_fee);
+        uint expected_value = _primaryToWei(sell_price);
         if (expected_value > accept_payment) {
             _cancelAccept();
         } else {
@@ -174,7 +176,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     function _primaryToWei(uint price) constant private returns (uint) {
         assert(conversion_rate != 0);
-        return convert(price, conversion_rate);
+        return Converter.convert(price, conversion_rate);
     }
 
     function _changeState(ContractStates new_state) private {
@@ -196,17 +198,11 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     }
 
     // Getters/Setters
-    function getState() constant returns (string) {
+    function getState() constant onlyOwner returns (string) {
         return state_strings[uint(state)];
-    }
-    function getTargetPrice() constant returns (uint) {
-        return target_price;
-    }
-    function getSellerEmail() constant returns (string) {
-        return seller_email;
     }
 
     function setState(uint new_state) onlyOwner {
-       state = ContractStates(new_state);
+        state = ContractStates(new_state);
     }
 }

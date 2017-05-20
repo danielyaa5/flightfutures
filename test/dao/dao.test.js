@@ -30,7 +30,7 @@ contract('DAO', (accounts) => {
         it('should be able to create a new FlightFuture contract', (done) => {
             Promise.coroutine(function*() {
                 dao = yield Dao.deployed();
-                const tx = yield dao.newFlightFuture.apply(this, default_valid);
+                const tx = yield dao.newFlightFuture.apply(this, default_valid.concat({ from: seller_account }));
                 const new_flight_future_logs = tx.logs.filter(log => log.event === 'NewFlightFutureEvent');
                 new_flight_future_address = new_flight_future_logs[0].args._contract;
                 const is_allowed = yield dao.isAllowedAddress(new_flight_future_address);

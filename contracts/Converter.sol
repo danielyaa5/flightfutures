@@ -1,6 +1,6 @@
 pragma solidity ^0.4.8;
 
-contract Converter {
+library Converter {
 	function convert(uint amount,uint conversionRate) returns (uint convertedAmount) {
 		return amount * conversionRate;
 	}

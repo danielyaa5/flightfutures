@@ -16,6 +16,7 @@ contract('Offered', (accounts) => {
     const owner = accounts[0];
     const dao_address = accounts[1];
     const seller_address = accounts[2];
+    const dao_owner = owner;
     const sell_price = 100;
     const target_price = 600;
     const contract_length_days = 42;
@@ -26,6 +27,7 @@ contract('Offered', (accounts) => {
     const valid_offer_params = new Map([
         ['dao_address', dao_address],
         ['seller_address', seller_address],
+        ['dao_owner', dao_owner],
         ['sell_price', sell_price],
         ['target_price', target_price],
         ['contract_length_days', contract_length_days],
@@ -84,10 +86,10 @@ contract('Offered', (accounts) => {
             const actual_dao_address = yield future.DaoContract();
             const actual_seller_address = yield future.seller();
             const actual_sell_price = yield future.sell_price();
-            const actual_target_price = yield future.getTargetPrice();
+            const actual_target_price = yield future.target_price();
             const actual_contract_length = yield future.contract_length();
             const actual_mark_to_market_rate = yield future.mark_to_market_rate();
-            const actual_seller_email = yield future.getSellerEmail();
+            const actual_seller_email = yield future.seller_email();
             const actual_price_feed_url = yield future.price_feed_url();
             const actual_conversion_feed_url = yield future.conversion_feed_url();
 

@@ -1,14 +1,12 @@
 pragma solidity ^0.4.8;
 
 import '../installed_contracts/zeppelin/contracts/ownership/Ownable.sol';
-import '../installed_contracts/zeppelin/contracts/SafeMath.sol';
-import '../installed_contracts/zeppelin/contracts/payment/PullPayment.sol';
 
 import './Oracle.sol';
 import './FlightFuture.sol';
 import './StringUtils.sol';
 
-contract Dao is Ownable, SafeMath, PullPayment, StringUtils, Oracle {
+contract Dao is Ownable, Oracle {
     function Dao() {}
 
     event NewFlightFutureEvent(
@@ -26,7 +24,7 @@ contract Dao is Ownable, SafeMath, PullPayment, StringUtils, Oracle {
         uint mark_to_market_rate, // hrs
         string seller_email
     ) external {
-        FlightFuture new_contract = new FlightFuture(this, msg.sender, flight_info,
+        FlightFuture new_contract = new FlightFuture(this, msg.sender, owner, flight_info,
             sell_price, target_price, contract_length, mark_to_market_rate, seller_email);
         addAllowedAddress(new_contract);
         NewFlightFutureEvent(new_contract);

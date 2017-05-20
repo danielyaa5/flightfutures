@@ -35,7 +35,7 @@ contract Oracle is Ownable {
       return AllowedAddressMap[addr];
     }
 
-    function addAllowedAddress(address addr) onlyOwner {
+    function addAllowedAddress(address addr) internal {
         AllowedAddressMap[addr] = true;
     }
 
@@ -55,5 +55,13 @@ contract Oracle is Ownable {
         if(requests[request_id].processed == true) throw;
 
         requests[request_id].callback(result);
+    }
+
+    function getRequestsLength() constant external onlyOwner returns (uint) {
+        return requests.length;
+    }
+
+    function getRequest(uint i) constant external onlyOwner returns (string, uint, bool) {
+        return (requests[i].url, requests[i].timestamp, requests[i].processed);
     }
 }

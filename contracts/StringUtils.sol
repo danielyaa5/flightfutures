@@ -1,6 +1,6 @@
 pragma solidity ^0.4.8;
 
-contract StringUtils {
+library StringUtils {
 
     function bytes32ToStr(bytes32 x) constant returns (string) {
         bytes memory bytesString = new bytes(32);

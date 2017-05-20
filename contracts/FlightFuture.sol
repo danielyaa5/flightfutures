@@ -1,6 +1,7 @@
 pragma solidity ^0.4.8;
 
 import './Future.sol';
+import './StringUtils.sol';
 
 /**
 	TODO (general):
@@ -24,6 +25,7 @@ contract FlightFuture is Future {
 	function FlightFuture(
 		address dao_address,
 		address seller_address,
+		address dao_owner,
 
         // flight info
         string _flight_info,
@@ -38,8 +40,8 @@ contract FlightFuture is Future {
 	) {
 		// flight info
 		flight_info = _flight_info;
-		string memory price_flight_url = strConcat(PRICE_FLIGHT_BASE_URL, '/', flight_info);
-		offer(dao_address, seller_address, sell_price, target_price, contract_length, mark_to_market_rate, seller_email, price_flight_url, CONVERSION_URL);
+		string memory price_flight_url = StringUtils.strConcat(PRICE_FLIGHT_BASE_URL, '/', flight_info);
+		offer(dao_address, seller_address, dao_owner, sell_price, target_price, contract_length, mark_to_market_rate, seller_email, price_flight_url, CONVERSION_URL);
 	}
 }
 
