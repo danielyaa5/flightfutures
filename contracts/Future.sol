@@ -21,10 +21,12 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     // Public
 
-    Prices public prices;
+    Dao public DaoContract;
+
     address public seller;
     address public buyer;
 
+    uint public sell_price;
     uint public contract_length; // seconds
     uint public expiration;
     uint public creation_timestamp;
@@ -37,24 +39,16 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
     // Private
 
-    Dao private DaoContract;
     string[11] private state_strings =
-    ['Nascent', 'Offered', 'Accepting', 'Accepted', 'Marked', 'Verified', 'Purchasing', 'TicketPurchased', 'Expired', 'Defaulted', 'Canceled'];
-    string private buyer_contact_information;
-    string private seller_contact_information;
+    ['Nascent', 'Offered', 'Accepting', 'Accepted', 'Marked', 'Verified', 'Expired', 'Defaulted', 'Canceled'];
+
+    string private buyer_email;
+    string private seller_email;
 
     // prices and balances in wei
     uint private current_price;
     uint private expected_balance;
-
-    // Structs
-
-    struct Prices {
-        uint sell_price; 		// primary
-
-        // TODO: should be hidden
-        uint target_price; 		// primary
-    }
+    uint private target_price;
 
     // Events
 
@@ -103,22 +97,23 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         address dao_address,
         address seller_address,
         // prices, all prices in lowest denomination of currency
-        uint sell_price, 		// primary
-        uint target_price, 		// primary
+        uint _sell_price, 		// primary
+        uint _target_price, 		// primary
 
         uint _contract_length, 	// days
         uint _mark_to_market_rate, // hrs
-        string seller_email,
+        string _seller_email,
         string _price_feed_url,
         string _conversion_feed_url
     ) payable {
         require(state == ContractStates.Nascent);
 
         DaoContract = Dao(dao_address);
-        prices = Prices(sell_price, target_price);
+        sell_price = _sell_price;
+        target_price = _target_price;
         contract_length = _contract_length;
         expiration = now + contract_length * 1 days;
-        seller_contact_information = seller_email;
+        seller_email = _seller_email;
         seller = seller_address;
         price_feed_url = _price_feed_url;
         conversion_feed_url = _conversion_feed_url;
@@ -130,7 +125,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     // Accepting Logic
 
     uint private accept_payment;
-    function accept(string buyer_email) external payable {
+    function accept(string _buyer_email) external payable {
         require(state == ContractStates.Offered);
         require(msg.value > accept_fee);
         require(now <= expiration);
@@ -138,7 +133,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
 
         accept_payment = msg.value;
         buyer = msg.sender;
-        buyer_contact_information = buyer_email;
+        buyer_email = _buyer_email;
         DaoContract.request(conversion_feed_url, this.confirmAccept);
         _changeState(ContractStates.Accepting);
     }
@@ -153,7 +148,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         asyncSend(buyer, accept_payment); // oraclize fees are automatically taken out of msg.value (oraclize fee + oraclize gas cost)
         accept_payment = 0;
         buyer = address(0);
-        buyer_contact_information = '';
+        buyer_email = '';
         _changeState(ContractStates.Offered);
     }
 
@@ -166,7 +161,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
         require(state == ContractStates.Accepting);
 
         conversion_rate = _conversion_rate_uint;
-        uint expected_value = safeAdd( _primaryToWei(prices.sell_price), accept_fee);
+        uint expected_value = safeAdd( _primaryToWei(sell_price), accept_fee);
         if (expected_value > accept_payment) {
             _cancelAccept();
         } else {
@@ -203,5 +198,15 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment, Converter, Strin
     // Getters/Setters
     function getState() constant returns (string) {
         return state_strings[uint(state)];
+    }
+    function getTargetPrice() constant returns (uint) {
+        return target_price;
+    }
+    function getSellerEmail() constant returns (string) {
+        return seller_email;
+    }
+
+    function setState(uint new_state) onlyOwner {
+       state = ContractStates(new_state);
     }
 }

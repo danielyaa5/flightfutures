@@ -2,7 +2,7 @@
 
 const Promise = require('bluebird');
 const request = require('request-promise');
-const debug = require('debug')('contract-tests:dao');
+const debug = require('debug')('contract-tests:Dao');
 const utils = require('../lib/utils');
 const constants = require('../lib/constants');
 
@@ -42,6 +42,13 @@ contract('DAO', (accounts) => {
                 assert.notEqual(new_flight_future_address.length, 0, 'Expected the address not to be an empty string');
                 assert.notEqual(Number(new_flight_future_address), 0, 'Expected the address not to be the zero address');
                 assert(is_allowed === true, 'Expected the new address to be added to the AllowedAddressMap');
+
+                return done();
+            })().catch(done);
+        });
+
+        it('should have the correct info set on the new FlightFuture', (done) => {
+            Promise.coroutine(function*() {
 
                 return done();
             })().catch(done);
