@@ -3,8 +3,8 @@
 const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Dao');
-const utils = require('../lib/utils');
-const constants = require('../lib/constants');
+const utils = require('../../lib/utils');
+const constants = require('../../lib/constants');
 
 const Dao = artifacts.require('./Dao');
 const FlightFuture = artifacts.require('./FlightFuture');

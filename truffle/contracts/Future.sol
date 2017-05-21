@@ -198,7 +198,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
     }
 
     // Getters/Setters
-    function getState() constant onlyOwner returns (string) {
+    function getState() constant returns (string) {
         return state_strings[uint(state)];
     }
 

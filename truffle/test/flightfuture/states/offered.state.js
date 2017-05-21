@@ -4,8 +4,8 @@ const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Future.offered');
 
-const utils = require('../../lib/utils');
-const constants = require('../../lib/constants');
+const utils = require('../../../lib/utils');
+const constants = require('../../../lib/constants');
 
 const Future = artifacts.require('./Future');
 const web3 = utils.web3;

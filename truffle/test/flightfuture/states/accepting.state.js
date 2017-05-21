@@ -3,8 +3,10 @@
 const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Dao');
-const utils = require('../../lib/utils');
-const constants = require('../../lib/constants');
+
+const utils = require('../../../lib/utils');
+const constants = require('../../../lib/constants');
+const oracleWorker = require('../../../../workers/oracle/oracleWorker');
 
 const Dao = artifacts.require('./Dao');
 const FlightFuture = artifacts.require('./FlightFuture');
@@ -199,7 +201,7 @@ contract('Accepting', (accounts) => {
         })().catch(done);
     });
 
-    it('should add conversion request to the Dao contract', (done) => {
+    it.only('should add conversion request to the Dao contract', (done) => {
         Promise.coroutine(function*() {
             const dao = yield Dao.new();
             const requests_length = yield dao.getRequestsLength();
@@ -219,6 +221,10 @@ contract('Accepting', (accounts) => {
             assert.equal(request[0], expected_url);
             assert.equal(request[1], expected_timestamp);
             assert.equal(request[2], expected_processed);
+
+            const worker = oracleWorker(dao.contract.address);
+            yield Promise.delay(10 * 1000);
+            worker.stop();
 
             return done();
         })().catch(done);
