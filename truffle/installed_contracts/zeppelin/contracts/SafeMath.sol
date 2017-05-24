@@ -4,28 +4,28 @@ pragma solidity ^0.4.8;
 /**
  * Math operations with safety checks
  */
-contract SafeMath {
-  function safeMul(uint a, uint b) internal returns (uint) {
+library SafeMath {
+  function mul(uint a, uint b) internal returns (uint) {
     uint c = a * b;
     assert(a == 0 || c / a == b);
     return c;
   }
 
-  function safeDiv(uint a, uint b) internal returns (uint) {
-    assert(b > 0);
+  function div(uint a, uint b) internal returns (uint) {
+    // assert(b > 0); // Solidity automatically throws when dividing by 0
     uint c = a / b;
-    assert(a == b * c + a % b);
+    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
     return c;
   }
 
-  function safeSub(uint a, uint b) internal returns (uint) {
+  function sub(uint a, uint b) internal returns (uint) {
     assert(b <= a);
     return a - b;
   }
 
-  function safeAdd(uint a, uint b) internal returns (uint) {
+  function add(uint a, uint b) internal returns (uint) {
     uint c = a + b;
-    assert(c>=a && c>=b);
+    assert(c >= a);
     return c;
   }
 
@@ -45,7 +45,7 @@ contract SafeMath {
     return a < b ? a : b;
   }
 
-  function assert(bool assertion) private {
+  function assert(bool assertion) internal {
     if (!assertion) {
       throw;
     }

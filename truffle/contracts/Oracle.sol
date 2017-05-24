@@ -9,6 +9,7 @@ contract Oracle is Ownable {
         string url;
         function(string memory) external callback;
         uint timestamp;
+        address flightfuture_address;
         bool processed;
     }
     Request[] requests;
@@ -17,6 +18,12 @@ contract Oracle is Ownable {
     event NewRequestEvent (
         string _url,
         uint _timestamp,
+        address _flightfuture_address,
+        uint _id
+    );
+
+    event NewResponseEvent (
+        string _result,
         uint _id
     );
 
@@ -40,28 +47,30 @@ contract Oracle is Ownable {
     }
 
     function request(string url, function(string memory) external callback) onlyAllowed {
-        requests.push(Request(url, callback, 0, false));
-        NewRequestEvent(url, 0, requests.length);
+        requests.push(Request(url, callback, 0, msg.sender, false));
+        NewRequestEvent(url, 0, msg.sender, requests.length);
     }
 
     function request(string url, uint time_to_wait, function(string memory) external callback) external onlyAllowed {
         uint timestamp = time_to_wait == 0 ? 0 : (now + time_to_wait) * 1000;
 
-        requests.push(Request(url, callback, timestamp, false));
-        NewRequestEvent(url, timestamp, requests.length);
+        requests.push(Request(url, callback, timestamp, msg.sender, false));
+        NewRequestEvent(url, timestamp, msg.sender, requests.length);
     }
 
-    function response(string result, uint request_id) onlyOwner external onlyAllowed {
-        if(requests[request_id].processed == true) throw;
+    function response(string result, uint id) onlyOwner external {
+        if(requests[id].processed == true) throw;
 
-        requests[request_id].callback(result);
+        NewResponseEvent(result, id);
+        requests[id].callback(result);
+        requests[id].processed = true;
     }
 
     function getRequestsLength() constant external onlyOwner returns (uint) {
         return requests.length;
     }
 
-    function getRequest(uint i) constant external onlyOwner returns (string, uint, bool) {
-        return (requests[i].url, requests[i].timestamp, requests[i].processed);
+    function getRequest(uint i) constant external onlyOwner returns (string, uint, address, bool) {
+        return (requests[i].url, requests[i].timestamp, requests[i].flightfuture_address, requests[i].processed);
     }
 }

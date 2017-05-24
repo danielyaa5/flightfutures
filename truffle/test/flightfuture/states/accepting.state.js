@@ -12,7 +12,7 @@ const Dao = artifacts.require('./Dao');
 const FlightFuture = artifacts.require('./FlightFuture');
 const web3 = utils.web3;
 
-const flight_info = 'LAX+CDG+10/21/2017';
+const flight_info = 'LAX+CDG+10-21-2017';
 const sell_price = 2;
 const target_price = 1;
 const contract_length_days = 60;
@@ -209,7 +209,7 @@ contract('Accepting', (accounts) => {
             const new_flight_future_logs = tx.logs.filter(log => log.event === 'NewFlightFutureEvent');
             const new_flight_future_address = new_flight_future_logs[0].args._contract;
             const future = FlightFuture.at(new_flight_future_address);
-            yield future.accept(buyer_email, { from: buyer_account, value: accept_payment });
+            yield future.accept(buyer_email, { from: buyer_account, value: web3.toWei(0.08) });
             const requests_length_prime = yield dao.getRequestsLength();
             assert.equal(requests_length, 0);
             assert.equal(requests_length_prime, 1);
@@ -217,10 +217,13 @@ contract('Accepting', (accounts) => {
             const request = yield dao.getRequest(0);
             const expected_url = yield future.conversion_feed_url();
             const expected_timestamp = 0;
+            const expected_flightfuture_address = new_flight_future_address;
             const expected_processed = false;
+            debug(`request: ${JSON.stringify(request.toString())}`);
             assert.equal(request[0], expected_url);
             assert.equal(request[1], expected_timestamp);
-            assert.equal(request[2], expected_processed);
+            assert.equal(request[2], expected_flightfuture_address);
+            assert.equal(request[3], expected_processed);
 
             const worker = oracleWorker(dao.contract.address);
             yield Promise.delay(10 * 1000);

@@ -1,8 +1,7 @@
-pragma solidity ^0.4.8;
+pragma solidity ^0.4.10;
 
 import '../installed_contracts/zeppelin/contracts/ownership/Ownable.sol';
 import '../installed_contracts/zeppelin/contracts/payment/PullPayment.sol';
-import '../installed_contracts/zeppelin/contracts/SafeMath.sol';
 
 import './StringUtils.sol';
 import './Purchasable.sol';
@@ -17,7 +16,7 @@ import './Dao.sol';
 		- Upgrade installed contracts
 		- Upgrade solidity version
 */
-contract Future is Purchasable, SafeMath, Ownable, PullPayment {
+contract Future is Purchasable, Ownable, PullPayment {
 
     // Public
 
@@ -37,12 +36,12 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
     // prices and balances in wei
     uint public current_price;
     uint public expected_balance;
-    uint public target_price;
+    uint public target_price; // TODO: Hide this
 
     string public conversion_feed_url;
     string public price_feed_url;
-    string public buyer_email;
-    string public seller_email;
+    string public buyer_email; // TODO: Hide this
+    string public seller_email; // TODO: Hide this
 
     // Private
 
@@ -62,8 +61,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
     );
     event MarkedToMarketEvent (
         uint _current_price,
-        uint _contract_balance,
-        uint _expected_balance
+        uint _contract_balance
     );
     event StateChangedEvent (
         string _prev_state,
@@ -120,7 +118,6 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
         price_feed_url = _price_feed_url;
         conversion_feed_url = _conversion_feed_url;
         mark_to_market_rate = _mark_to_market_rate;
-
         _changeState(ContractStates.Offered);
     }
 
@@ -147,7 +144,7 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
     function _cancelAccept() private {
         require(state == ContractStates.Accepting);
 
-        asyncSend(buyer, accept_payment); // oraclize fees are automatically taken out of msg.value (oraclize fee + oraclize gas cost)
+        asyncSend(buyer, accept_payment);
         accept_payment = 0;
         buyer = address(0);
         buyer_email = '';
@@ -155,26 +152,72 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
     }
 
     function confirmAccept(string _conversion_rate) {
-        if (msg.sender != address(DaoContract)) throw;
-
-        uint _conversion_rate_uint = StringUtils.parseInt(_conversion_rate);
-
-        require(_conversion_rate_uint > 0);
         require(state == ContractStates.Accepting);
+        require(msg.sender == address(DaoContract));
 
-        conversion_rate = _conversion_rate_uint;
-        uint expected_value = _primaryToWei(sell_price);
+        // conversion rate is usd to ether, multiply by 10**18 to convert to us cents to wei
+        uint conversion_rate_uint = StringUtils.parseInt(_conversion_rate, 18) / 100;
+        require(conversion_rate_uint > 0);
+        conversion_rate = conversion_rate_uint;
+        uint expected_value = _usCentsToWei(sell_price);
+
         if (expected_value > accept_payment) {
             _cancelAccept();
         } else {
-            uint diff = safeSub(accept_payment, expected_value);
+            uint diff = accept_payment - expected_value;
             asyncSend(buyer, diff); // Send back the difference
+            _changeState(ContractStates.Accepted);
+            markToMarket('0');
         }
-
-        _changeState(ContractStates.Accepted);
     }
 
-    function _primaryToWei(uint price) constant private returns (uint) {
+    // This function gets called periodically to adjust the money in the contract
+    function markToMarket(string _current_price) {
+        require(msg.sender == address(DaoContract));
+
+        // the contract has not been marked yet no reason to check
+        if (state == ContractStates.Marked) {
+            uint current_price_uint = StringUtils.parseInt(_current_price, 2);
+            assert(current_price_uint > 0);
+            current_price = current_price_uint;
+            _verifyBalance();
+            assert(state == ContractStates.Verified);
+            MarkedToMarketEvent(current_price, this.balance);
+        } else if (state != ContractStates.Accepted) {
+            throw;
+        }
+
+        _changeState(ContractStates.Marked);
+        DaoContract.request(price_feed_url, 60 * 60 * 24, this.markToMarket);
+    }
+
+    function _verifyBalance() private {
+        // if the contract isn't marked to market we shouldn't be calling _verifyBalance
+        assert(state == ContractStates.Marked);
+        resetBalance(owner);
+        resetBalance(buyer);
+        int balance_diff = int(this.balance) - int(current_price);
+
+        // if the there is a negative balance, the contract has a deficit and is overdue
+        if (balance_diff < 0) {
+            _sellerDefault();
+            return;
+        }
+
+        // if the contract has an excess balance then expected we can send money back to the owner
+        if (balance_diff > 0) {
+            asyncSend(seller, uint(balance_diff));
+        }
+
+        _changeState(ContractStates.Verified);
+    }
+
+    function _sellerDefault() private {
+        asyncSend(buyer, this.balance);
+        _changeState(ContractStates.Defaulted);
+    }
+
+    function _usCentsToWei(uint price) constant private returns (uint) {
         assert(conversion_rate != 0);
         return Converter.convert(price, conversion_rate);
     }
@@ -185,16 +228,6 @@ contract Future is Purchasable, SafeMath, Ownable, PullPayment {
         string prev_state = state_strings[uint(state)];
         state = new_state;
         StateChangedEvent(prev_state, state_strings[uint(state)]);
-    }
-
-    // TODO: Remove after updating solidity version
-    function require(bool expression) private {
-        if (expression == false) throw;
-    }
-
-    // TODO: Remove after updating solidity version
-    function assert(bool assertion) private {
-        if (assertion == false) throw;
     }
 
     // Getters/Setters
