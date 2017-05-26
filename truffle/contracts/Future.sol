@@ -22,8 +22,6 @@ contract Future is Purchasable, Ownable, PullPayment {
 
     Dao public DaoContract;
 
-    address public seller;
-    address public buyer;
     address public dao_owner;
 
     uint public sell_price;
@@ -31,7 +29,7 @@ contract Future is Purchasable, Ownable, PullPayment {
     uint public expiration;
     uint public creation_timestamp;
     uint public conversion_rate; // primary currency to wei
-    uint public mark_to_market_rate;
+    uint public mark_to_market_rate_secs;
 
     // prices and balances in wei
     uint public current_price;
@@ -99,7 +97,7 @@ contract Future is Purchasable, Ownable, PullPayment {
         uint _target_price, 		// primary
 
         uint _contract_length, 	// days
-        uint _mark_to_market_rate, // hrs
+        uint _mark_to_market_rate_secs, // hrs
         string _seller_email,
         string _price_feed_url,
         string _conversion_feed_url
@@ -117,7 +115,7 @@ contract Future is Purchasable, Ownable, PullPayment {
         seller = seller_address;
         price_feed_url = _price_feed_url;
         conversion_feed_url = _conversion_feed_url;
-        mark_to_market_rate = _mark_to_market_rate;
+        mark_to_market_rate_secs = _mark_to_market_rate_secs;
         _changeState(ContractStates.Offered);
     }
 
@@ -188,7 +186,7 @@ contract Future is Purchasable, Ownable, PullPayment {
         }
 
         _changeState(ContractStates.Marked);
-        DaoContract.request(price_feed_url, 60 * 60 * 24, this.markToMarket);
+        DaoContract.request(price_feed_url, mark_to_market_rate_secs, this.markToMarket);
     }
 
     function _verifyBalance() private {

@@ -93,7 +93,6 @@ downloads/
 eggs/
 .eggs/
 lib/
-!test/lib
 lib64/
 parts/
 sdist/

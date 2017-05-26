@@ -4,9 +4,8 @@ const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Dao');
 
-const utils = require('../../../lib/utils');
-const constants = require('../../../lib/constants');
-const oracleWorker = require('../../../../workers/oracle/oracleWorker');
+const utils = require('../../../future-lib/utils');
+const constants = require('../../../future-lib/constants');
 
 const Dao = artifacts.require('./Dao');
 const FlightFuture = artifacts.require('./FlightFuture');
@@ -16,10 +15,10 @@ const flight_info = 'LAX+CDG+10-21-2017';
 const sell_price = 2;
 const target_price = 1;
 const contract_length_days = 60;
-const mark_to_market_rate_hrs = 24;
+const mark_to_market_rate_secs = 24;
 const seller_email = 'danielyaa5@gmail.com';
 const default_valid_offer  = [
-    flight_info, sell_price, target_price, contract_length_days, mark_to_market_rate_hrs, seller_email
+    flight_info, sell_price, target_price, contract_length_days, mark_to_market_rate_secs, seller_email
 ];
 const buyer_email = 'foo@bar.com';
 const accept_payment = 1; // Some value greater than 1, doesn't matter for these tests
@@ -224,10 +223,6 @@ contract('Accepting', (accounts) => {
             assert.equal(request[1], expected_timestamp);
             assert.equal(request[2], expected_flightfuture_address);
             assert.equal(request[3], expected_processed);
-
-            const worker = oracleWorker(dao.contract.address);
-            yield Promise.delay(10 * 1000);
-            worker.stop();
 
             return done();
         })().catch(done);

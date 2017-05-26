@@ -4,8 +4,8 @@ const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Future.offered');
 
-const utils = require('../../../lib/utils');
-const constants = require('../../../lib/constants');
+const utils = require('../../../future-lib/utils');
+const constants = require('../../../future-lib/constants');
 
 const Future = artifacts.require('./Future');
 const web3 = utils.web3;
@@ -20,7 +20,7 @@ contract('Offered', (accounts) => {
     const sell_price = 100;
     const target_price = 600;
     const contract_length_days = 42;
-    const mark_to_market_rate_hrs = 24;
+    const mark_to_market_rate_secs = 24;
     const seller_email = 'seller@foobar.com';
     const price_feed_url = 'http://price-feed-example.com';
     const conversion_feed_url = 'http://conversion-feed-example.com';
@@ -31,7 +31,7 @@ contract('Offered', (accounts) => {
         ['sell_price', sell_price],
         ['target_price', target_price],
         ['contract_length_days', contract_length_days],
-        ['mark_to_market_rate_hrs', mark_to_market_rate_hrs],
+        ['mark_to_market_rate_secs', mark_to_market_rate_secs],
         ['seller_email', seller_email],
         ['price_feed_url', price_feed_url],
         ['conversion_feed_url', conversion_feed_url]
@@ -88,7 +88,7 @@ contract('Offered', (accounts) => {
             const actual_sell_price = yield future.sell_price();
             const actual_target_price = yield future.target_price();
             const actual_contract_length = yield future.contract_length();
-            const actual_mark_to_market_rate = yield future.mark_to_market_rate();
+            const actual_mark_to_market_rate = yield future.mark_to_market_rate_secs();
             const actual_seller_email = yield future.seller_email();
             const actual_price_feed_url = yield future.price_feed_url();
             const actual_conversion_feed_url = yield future.conversion_feed_url();
@@ -98,7 +98,7 @@ contract('Offered', (accounts) => {
             const expected_sell_price = valid_offer_params.get('sell_price');
             const expected_target_price = valid_offer_params.get('target_price');
             const expected_contract_length = valid_offer_params.get('contract_length_days');
-            const expected_mark_to_market_rate = valid_offer_params.get('mark_to_market_rate_hrs');
+            const expected_mark_to_market_rate = valid_offer_params.get('mark_to_market_rate_secs');
             const expected_seller_email = valid_offer_params.get('seller_email');
             const expected_price_feed_url = valid_offer_params.get('price_feed_url');
             const expected_conversion_feed_url = valid_offer_params.get('conversion_feed_url');

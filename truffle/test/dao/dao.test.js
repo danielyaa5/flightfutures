@@ -3,8 +3,8 @@
 const Promise = require('bluebird');
 const request = require('request-promise');
 const debug = require('debug')('contract-tests:Dao');
-const utils = require('../../lib/utils');
-const constants = require('../../lib/constants');
+const utils = require('../../future-lib/utils');
+const constants = require('../../future-lib/constants');
 
 const Dao = artifacts.require('./Dao');
 const FlightFuture = artifacts.require('./FlightFuture');
@@ -14,10 +14,10 @@ const flight_info = 'LAX+CDG+10/21/2017';
 const sell_price = 600;
 const target_price = 400;
 const contract_length_days = 60;
-const mark_to_market_rate_hrs = 24;
+const mark_to_market_rate_secs = 24;
 const seller_email = 'danielyaa5@gmail.com';
 const default_valid  = [
-    flight_info, sell_price, target_price, contract_length_days, mark_to_market_rate_hrs, seller_email
+    flight_info, sell_price, target_price, contract_length_days, mark_to_market_rate_secs, seller_email
 ];
 
 contract('DAO', (accounts) => {
@@ -61,7 +61,7 @@ contract('DAO', (accounts) => {
                 const actual_sell_price = yield future.sell_price();
                 const actual_target_price = yield future.target_price();
                 const actual_contract_length_days = yield future.contract_length();
-                const actual_mark_to_market_rate_hrs = yield future.mark_to_market_rate();
+                const actual_mark_to_market_rate_secs = yield future.mark_to_market_rate_secs();
                 const actual_seller_email = yield future.seller_email();
 
                 const expected_dao_owner = owner_account;
@@ -72,7 +72,7 @@ contract('DAO', (accounts) => {
                 const expected_sell_price = sell_price;
                 const expected_target_price = target_price;
                 const expected_contract_length_days = contract_length_days;
-                const expected_mark_to_market_rate_hrs = mark_to_market_rate_hrs;
+                const expected_mark_to_market_rate_secs = mark_to_market_rate_secs;
                 const expected_seller_email = seller_email;
 
                 // assertions
@@ -84,7 +84,7 @@ contract('DAO', (accounts) => {
                 assert.equal(actual_sell_price, expected_sell_price);
                 assert.equal(actual_target_price, expected_target_price);
                 assert.equal(actual_contract_length_days, expected_contract_length_days);
-                assert.equal(actual_mark_to_market_rate_hrs, expected_mark_to_market_rate_hrs);
+                assert.equal(actual_mark_to_market_rate_secs, expected_mark_to_market_rate_secs);
                 assert.equal(actual_seller_email, expected_seller_email);
 
                 return done();
